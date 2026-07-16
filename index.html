@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClaveX fm · Tu Radio de la Salsa, en vivo</title>
+  <meta name="description" content="ClaveX fm — emisora de salsa, con mucho sabor. Salsa dura y brava de varias orquestas, transmitiendo en vivo las 24 horas.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="container">
+      <a href="#top" class="nav-brand"><span class="dot"></span> CLAVEX FM</a>
+      <ul class="nav-links">
+        <li><a href="#top">Inicio</a></li>
+        <li><a href="#en-vivo">En Vivo</a></li>
+        <li><a href="#repertorio">Repertorio</a></li>
+        <li><a href="#orquesta">Nosotros</a></li>
+        <li><a href="#programacion">Programación</a></li>
+        <li><a href="#contacto">Contacto</a></li>
+      </ul>
+      <button id="navAdminBtn" class="btn-admin" onclick="showAdminLogin()">Administrador</button>
+    </div>
+  </nav>
+
+  <header id="top" class="hero">
+    <div class="container">
+      <span class="hero-eyebrow"><span class="pulse"></span> AL AIRE 24/7</span>
+
+      <div class="medallion-wrap">
+        <svg class="medallion" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClaveX fm, radio de salsa">
+          <defs>
+            <radialGradient id="discGrad" cx="35%" cy="30%" r="75%">
+              <stop offset="0%" stop-color="#2A3A8C"/>
+              <stop offset="100%" stop-color="#12173F"/>
+            </radialGradient>
+            <path id="topArc" d="M 50,160 A 110,110 0 0 1 270,160" fill="none"/>
+            <path id="bottomArc" d="M 270,168 A 110,110 0 0 1 50,168" fill="none"/>
+          </defs>
+
+          <circle cx="160" cy="160" r="152" fill="var(--night)"/>
+          <circle cx="160" cy="160" r="148" fill="url(#discGrad)" stroke="var(--gold)" stroke-width="2.5"/>
+          <circle cx="160" cy="160" r="134" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+          <circle cx="160" cy="160" r="120" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
+          <circle cx="160" cy="160" r="106" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+
+          <!-- palmeras pequeñas -->
+          <path d="M64,178 q-10,-4 -16,-14 q10,0 15,6 q-2,-10 4,-18 q4,10 0,18 q7,-4 15,-1 q-8,8 -18,9 Z" fill="rgba(255,255,255,0.35)"/>
+          <path d="M256,178 q10,-4 16,-14 q-10,0 -15,6 q2,-10 -4,-18 q-4,10 0,18 q-7,-4 -15,-1 q8,8 18,9 Z" fill="rgba(255,255,255,0.35)"/>
+
+          <!-- destello -->
+          <path d="M242,72 l4,10 10,4 -10,4 -4,10 -4,-10 -10,-4 10,-4 Z" fill="var(--gold)"/>
+
+          <text font-family="var(--font-badge)" font-size="15" fill="var(--cream)" letter-spacing="3">
+            <textPath href="#topArc" startOffset="50%" text-anchor="middle">RADIO DE SALSA</textPath>
+          </text>
+
+          <text font-family="var(--font-display)" font-weight="900" font-size="46" text-anchor="middle" paint-order="stroke" stroke="white" stroke-width="3">
+            <tspan x="160" y="150" fill="var(--hibiscus)">ClaveX</tspan>
+          </text>
+          <text x="160" y="182" font-family="var(--font-body)" font-style="italic" font-weight="700" font-size="22" fill="var(--cream)" text-anchor="middle" letter-spacing="1">fm</text>
+
+          <text font-family="var(--font-badge)" font-size="12" fill="var(--cream)" letter-spacing="2">
+            <textPath href="#bottomArc" startOffset="50%" text-anchor="middle">ORIGINAL Y CALIENTE</textPath>
+          </text>
+
+          <circle cx="160" cy="160" r="9" fill="var(--night)" stroke="var(--gold)" stroke-width="2"/>
+        </svg>
+      </div>
+
+      <p class="hero-eyebrow-orange">Tu Radio de la Salsa</p>
+      <p class="tagline">emisora de salsa, con mucho sabor</p>
+
+      <div id="en-vivo" class="player">
+        <div class="clavex-cta-row">
+          <button id="playCta" class="play-cta" onclick="handlePlayCta()" aria-label="Reproducir ClaveX fm">
+            <span id="playCtaIcon">▶</span>
+          </button>
+        </div>
+        <p class="player-sub">Transmisión en vivo</p>
+        <div class="player-frame">
+          <div id="youtubePlayerContainer"></div>
+        </div>
+        <div class="now-playing-row">
+          <div class="equalizer"><span></span><span></span><span></span><span></span><span></span></div>
+          <p class="now-playing"><span class="label">Suena ahora</span><span id="nowPlaying">Cargando...</span></p>
+        </div>
+        <div class="player-controls">
+          <button class="btn-next" onclick="nextSong()">Siguiente canción ▶</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="orquesta" class="about-section">
+    <div class="container about-grid">
+      <div class="about-copy">
+        <span class="section-eyebrow">Nuestra historia</span>
+        <h2 class="section-title">Salsa dura, <span>sin pausa</span></h2>
+        <p>ClaveX fm nace para reunir en un solo dial la salsa brava que se baila de verdad: la de las orquestas de barrio, las tarimas de pueblo y las casetas donde la clave nunca para.</p>
+        <p>Aquí no hay una sola orquesta — hay un repertorio completo de agrupaciones que defienden la salsa dura y con sabor, metales que pegan y montunos que no dan tregua.</p>
+        <p>Esta emisora nace para que esa salsa suene las 24 horas, en cualquier parte del mundo donde haya alguien con ganas de bailar.</p>
+        <div class="about-stats">
+          <div class="stat"><strong>24/7</strong><span>Al aire</span></div>
+          <div class="stat"><strong>100%</strong><span>Salsa brava</span></div>
+          <div class="stat"><strong>+</strong><span>Varias orquestas</span></div>
+        </div>
+      </div>
+      <div class="about-visual" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section id="repertorio" class="playlist-section">
+    <div class="container">
+      <span class="section-eyebrow">Tracklist oficial</span>
+      <h2 class="section-title">Repertorio <span>ClaveX</span></h2>
+      <p class="section-lead">Los clásicos que no pueden faltar en la parranda, de varias orquestas de salsa. Toca cualquier canción para escucharla en el reproductor.</p>
+      <div id="playlist" class="playlist"></div>
+    </div>
+  </section>
+
+  <section id="programacion" class="schedule-section">
+    <div class="container">
+      <span class="section-eyebrow">Emisora completa</span>
+      <h2 class="section-title">Programación <span>semanal</span></h2>
+      <p class="section-lead">Franjas pensadas para acompañar cada momento del día con el mejor sabor de salsa.</p>
+      <div id="scheduleGrid" class="schedule-grid"></div>
+    </div>
+  </section>
+
+  <section id="contacto" class="contact-section">
+    <div class="container">
+      <span class="section-eyebrow">Síguenos</span>
+      <h2 class="section-title">Conecta con <span>ClaveX fm</span></h2>
+      <p class="section-lead" style="margin:0 auto;">Escríbenos para presentaciones, contrataciones o para pedir tu canción favorita en la radio.</p>
+      <div class="social">
+        <a href="#" aria-label="Facebook de ClaveX fm">Facebook</a>
+        <a href="#" aria-label="Instagram de ClaveX fm">Instagram</a>
+        <a href="#" aria-label="YouTube de ClaveX fm">YouTube</a>
+        <a href="#" aria-label="WhatsApp de ClaveX fm">WhatsApp</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p class="foot-brand">CLAVEX FM</p>
+      <p>Tu radio de la salsa — con mucho sabor, las 24 horas.</p>
+      <p>&copy; <span id="year"></span> ClaveX fm. Todos los derechos reservados.</p>
+    </div>
+  </footer>
+
+  <!-- Modal: Login Administrador -->
+  <div id="adminModal" class="modal-overlay">
+    <div class="modal-box">
+      <h3>Acceso Administrador</h3>
+      <p id="loginError" class="form-error" hidden></p>
+      <input type="email" id="email" placeholder="Correo" autocomplete="username">
+      <input type="password" id="password" placeholder="Contraseña" autocomplete="current-password">
+      <button class="btn-modal-primary" onclick="adminLogin()">Entrar</button>
+      <button class="btn-modal-secondary" onclick="hideAdminLogin()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Modal: Panel de Administrador -->
+  <div id="adminDashboard" class="modal-overlay">
+    <div class="modal-box modal-box-wide">
+      <div class="dash-header">
+        <h3>Panel de Administrador</h3>
+        <button class="btn-modal-secondary btn-logout" onclick="adminLogout()">Cerrar sesión</button>
+      </div>
+
+      <div class="dash-tabs">
+        <button class="dash-tab active" data-tab="songsTab" onclick="switchTab('songsTab')">🎵 Canciones</button>
+        <button class="dash-tab" data-tab="scheduleTab" onclick="switchTab('scheduleTab')">🕒 Programación</button>
+      </div>
+
+      <!-- TAB: Canciones -->
+      <div id="songsTab" class="dash-panel active">
+        <div id="adminSongsList" class="dash-list"></div>
+
+        <form id="songForm" class="dash-form" onsubmit="return submitSongForm(event)">
+          <input type="hidden" id="songId">
+          <label>Título de la canción</label>
+          <input type="text" id="songTitle" placeholder="Ej: El Negro Carabalí" required>
+          <label>Artista / Orquesta</label>
+          <input type="text" id="songArtist" placeholder="Ej: Son de Ébano" required>
+          <label>ID de YouTube <span class="hint">(la parte final de la URL, después de watch?v=)</span></label>
+          <input type="text" id="songYoutubeId" placeholder="Ej: RcakcxYY1p4" required>
+          <div class="dash-form-actions">
+            <button type="submit" class="btn-modal-primary" id="songSubmitBtn">Agregar canción</button>
+            <button type="button" class="btn-modal-secondary" id="songCancelBtn" onclick="resetSongForm()" hidden>Cancelar edición</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- TAB: Programación -->
+      <div id="scheduleTab" class="dash-panel">
+        <div id="adminScheduleList" class="dash-list"></div>
+
+        <form id="scheduleForm" class="dash-form" onsubmit="return submitScheduleForm(event)">
+          <input type="hidden" id="scheduleId">
+          <label>Horario</label>
+          <input type="text" id="scheduleTime" placeholder="Ej: 6:00 AM – 9:00 AM" required>
+          <label>Nombre del programa</label>
+          <input type="text" id="scheduleTitle" placeholder="Ej: Amanecer con Son" required>
+          <label>Descripción</label>
+          <input type="text" id="scheduleDesc" placeholder="Breve descripción del programa">
+          <div class="dash-form-actions">
+            <button type="submit" class="btn-modal-primary" id="scheduleSubmitBtn">Agregar franja</button>
+            <button type="button" class="btn-modal-secondary" id="scheduleCancelBtn" onclick="resetScheduleForm()" hidden>Cancelar edición</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

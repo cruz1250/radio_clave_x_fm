@@ -1,7 +1,5 @@
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
-// Reemplaza los dos valores de abajo con los de tu proyecto.
-// Los encuentras en: Supabase > tu proyecto > Settings > API
 // ============================================================
 
 const SUPABASE_URL = "https://vfavwksyqvnorqkuxoxd.supabase.co";

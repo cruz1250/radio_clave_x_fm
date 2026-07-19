@@ -7,7 +7,9 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 
 let songs = [];
 let schedule = [];
+let announcements = [];
 let currentIndex = 0;
+let mode = 'unknown'; // 'live' | 'playlist'
 
 // ---------- Reproductor YouTube ----------
 let ytPlayer = null;
@@ -22,6 +24,7 @@ window.onYouTubeIframeAPIReady = function () {
 };
 
 function tryInitPlayer() {
+  if (mode === 'live') return; // no crear el reproductor YouTube mientras hay señal en vivo
   if (youtubeApiReady && songsDataReady && !ytPlayer && songs.length > 0) {
     ytPlayer = new YT.Player('youtubePlayerContainer', {
       height: '220',
@@ -66,6 +69,31 @@ function onPlayerStateChange(event) {
 }
 
 function handlePlayCta() {
+  if (mode === 'live') {
+    const audio = document.getElementById('liveAudio');
+    if (!audio) return;
+
+    if (!soundEnabled) {
+      soundEnabled = true;
+      audio.muted = false;
+      audio.play();
+      isPlaying = true;
+      updatePlayCtaIcon();
+      return;
+    }
+
+    if (isPlaying) {
+      audio.pause();
+      isPlaying = false;
+    } else {
+      audio.play();
+      isPlaying = true;
+    }
+    updatePlayCtaIcon();
+    return;
+  }
+
+  // Modo repertorio (YouTube)
   if (!ytPlayer) return;
 
   if (!soundEnabled) {
@@ -88,6 +116,82 @@ function handlePlayCta() {
 function updatePlayCtaIcon() {
   const icon = document.getElementById('playCtaIcon');
   if (icon) icon.textContent = isPlaying ? '❚❚' : '▶';
+}
+
+// ============================================================
+// SEÑAL EN VIVO (Zeno.fm) con caída automática al repertorio
+// ============================================================
+
+function attemptLiveStream() {
+  const audio = document.getElementById('liveAudio');
+  const badge = document.getElementById('liveStatusBadge');
+
+  if (!audio || typeof ZENO_STREAM_URL === 'undefined' || !ZENO_STREAM_URL || ZENO_STREAM_URL.includes('TU-MOUNT-AQUI')) {
+    // No hay URL de streaming configurada todavía: usar repertorio directamente.
+    switchToPlaylistMode();
+    return;
+  }
+
+  if (badge) badge.textContent = 'Conectando…';
+
+  audio.src = ZENO_STREAM_URL;
+  audio.muted = true; // necesario para que el navegador permita el intento automático
+
+  const timeout = setTimeout(() => {
+    switchToPlaylistMode();
+  }, 6000);
+
+  audio.addEventListener('playing', function onPlaying() {
+    clearTimeout(timeout);
+    switchToLiveMode();
+    audio.removeEventListener('error', onError);
+  }, { once: true });
+
+  function onError() {
+    clearTimeout(timeout);
+    switchToPlaylistMode();
+  }
+  audio.addEventListener('error', onError, { once: true });
+
+  audio.play().catch(() => {
+    // El navegador bloqueó el intento silencioso; se espera el timeout como respaldo.
+  });
+}
+
+function switchToLiveMode() {
+  mode = 'live';
+  isPlaying = true;
+  updateModeUI();
+}
+
+function switchToPlaylistMode() {
+  mode = 'playlist';
+  updateModeUI();
+  tryInitPlayer();
+}
+
+function updateModeUI() {
+  const badge = document.getElementById('liveStatusBadge');
+  const ytContainer = document.getElementById('youtubePlayerContainer');
+  const nowPlayingEl = document.getElementById('nowPlaying');
+
+  if (mode === 'live') {
+    if (badge) { badge.textContent = '🔴 EN VIVO'; badge.classList.add('is-live'); }
+    if (ytContainer) ytContainer.style.display = 'none';
+    if (nowPlayingEl) nowPlayingEl.textContent = 'Transmisión en vivo — ClaveX fm';
+  } else {
+    if (badge) { badge.textContent = '🎶 Repertorio'; badge.classList.remove('is-live'); }
+    if (ytContainer) ytContainer.style.display = 'block';
+    updateNowPlayingText();
+  }
+  updatePlayCtaIcon();
+}
+
+// Botón para que un oyente vuelva a intentar la señal en vivo
+// (útil si el locutor empezó a transmitir después de cargar la página)
+function retryLiveSignal() {
+  soundEnabled = false;
+  attemptLiveStream();
 }
 
 // ============================================================
@@ -126,9 +230,35 @@ async function loadSchedule() {
   renderSchedule();
 }
 
+async function loadAnnouncements() {
+  const { data, error } = await supabaseClient
+    .from('announcements')
+    .select('*')
+    .order('position', { ascending: true });
+
+  if (error) {
+    console.error('Error cargando avisos:', error);
+    return;
+  }
+
+  announcements = data || [];
+  renderAnnouncements();
+}
+
 function playSong(index) {
   if (!songs[index]) return;
   currentIndex = index;
+
+  // Si alguien elige una canción puntual del repertorio mientras hay
+  // transmisión en vivo, pausamos la señal en vivo y pasamos a modo repertorio.
+  if (mode === 'live') {
+    const liveAudioEl = document.getElementById('liveAudio');
+    if (liveAudioEl) liveAudioEl.pause();
+    mode = 'playlist';
+    updateModeUI();
+    tryInitPlayer();
+  }
+
   const song = songs[index];
 
   if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
@@ -176,7 +306,7 @@ function renderPlaylist() {
       <span class="song-num">${String(i + 1).padStart(2, '0')}</span>
       <div class="song-info">
         <div class="song-title">${escapeHtml(song.title)}</div>
-        <div class="song-sub">${escapeHtml(song.artist || 'ClaveX fm')} · En vivo</div>
+        <div class="song-sub">${escapeHtml(song.artist || 'ClaveX fm')} · Repertorio</div>
       </div>
       <button class="song-play" aria-label="Reproducir ${escapeHtml(song.title)}">▶</button>
     `;
@@ -198,6 +328,29 @@ function renderSchedule() {
       <p>${escapeHtml(item.description || '')}</p>
     `;
     grid.appendChild(div);
+  });
+}
+
+function renderAnnouncements() {
+  const list = document.getElementById('announcementsList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const visible = announcements.filter(a => a.active);
+
+  if (visible.length === 0) {
+    list.innerHTML = '<p class="announcements-empty">No hay avisos por el momento.</p>';
+    return;
+  }
+
+  visible.forEach((item) => {
+    const div = document.createElement('div');
+    div.className = 'announcement-card';
+    div.innerHTML = `
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>${escapeHtml(item.message)}</p>
+    `;
+    list.appendChild(div);
   });
 }
 
@@ -273,6 +426,7 @@ supabaseClient.auth.onAuthStateChange((_event, session) => {
 function openAdminDashboard() {
   renderAdminSongsList();
   renderAdminScheduleList();
+  renderAdminAnnouncementsList();
   document.getElementById('adminDashboard').classList.add('open');
 }
 
@@ -298,6 +452,8 @@ function renderAdminSongsList() {
       <span class="dash-row-num">${i + 1}</span>
       <span class="dash-row-title">${escapeHtml(song.title)} <em class="dash-row-artist">— ${escapeHtml(song.artist || '')}</em></span>
       <div class="dash-row-actions">
+        <button class="dash-icon-btn-move" onclick="moveSongUp('${song.id}')" ${i === 0 ? 'disabled' : ''} title="Subir">↑</button>
+        <button class="dash-icon-btn-move" onclick="moveSongDown('${song.id}')" ${i === songs.length - 1 ? 'disabled' : ''} title="Bajar">↓</button>
         <button class="dash-icon-btn" onclick="editSong('${song.id}')">Editar</button>
         <button class="dash-icon-btn dash-icon-danger" onclick="deleteSong('${song.id}')">Eliminar</button>
       </div>
@@ -360,19 +516,45 @@ async function deleteSong(id) {
   renderAdminSongsList();
 }
 
+async function moveSongUp(id) {
+  const index = songs.findIndex(s => s.id === id);
+  if (index <= 0) return;
+  await swapPositions('songs', songs[index], songs[index - 1]);
+  await loadSongs();
+  renderAdminSongsList();
+}
+
+async function moveSongDown(id) {
+  const index = songs.findIndex(s => s.id === id);
+  if (index === -1 || index >= songs.length - 1) return;
+  await swapPositions('songs', songs[index], songs[index + 1]);
+  await loadSongs();
+  renderAdminSongsList();
+}
+
+async function swapPositions(table, itemA, itemB) {
+  const posA = itemA.position;
+  const posB = itemB.position;
+  const { error: e1 } = await supabaseClient.from(table).update({ position: posB }).eq('id', itemA.id);
+  const { error: e2 } = await supabaseClient.from(table).update({ position: posA }).eq('id', itemB.id);
+  if (e1 || e2) alert('Error al reordenar: ' + (e1?.message || e2?.message));
+}
+
 // ---------- Gestión de programación ----------
 
 function renderAdminScheduleList() {
   const list = document.getElementById('adminScheduleList');
   list.innerHTML = '';
 
-  schedule.forEach((item) => {
+  schedule.forEach((item, i) => {
     const row = document.createElement('div');
     row.className = 'dash-row';
     row.innerHTML = `
       <span class="dash-row-num">${escapeHtml(item.time_range)}</span>
       <span class="dash-row-title">${escapeHtml(item.title)}</span>
       <div class="dash-row-actions">
+        <button class="dash-icon-btn-move" onclick="moveScheduleUp('${item.id}')" ${i === 0 ? 'disabled' : ''} title="Subir">↑</button>
+        <button class="dash-icon-btn-move" onclick="moveScheduleDown('${item.id}')" ${i === schedule.length - 1 ? 'disabled' : ''} title="Bajar">↓</button>
         <button class="dash-icon-btn" onclick="editScheduleItem('${item.id}')">Editar</button>
         <button class="dash-icon-btn dash-icon-danger" onclick="deleteScheduleItem('${item.id}')">Eliminar</button>
       </div>
@@ -435,6 +617,108 @@ async function deleteScheduleItem(id) {
   renderAdminScheduleList();
 }
 
+async function moveScheduleUp(id) {
+  const index = schedule.findIndex(s => s.id === id);
+  if (index <= 0) return;
+  await swapPositions('schedule', schedule[index], schedule[index - 1]);
+  await loadSchedule();
+  renderAdminScheduleList();
+}
+
+async function moveScheduleDown(id) {
+  const index = schedule.findIndex(s => s.id === id);
+  if (index === -1 || index >= schedule.length - 1) return;
+  await swapPositions('schedule', schedule[index], schedule[index + 1]);
+  await loadSchedule();
+  renderAdminScheduleList();
+}
+
+// ---------- Gestión de avisos / información ----------
+
+function renderAdminAnnouncementsList() {
+  const list = document.getElementById('adminAnnouncementsList');
+  list.innerHTML = '';
+
+  announcements.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'dash-row' + (item.active ? '' : ' dash-row-inactive');
+    row.innerHTML = `
+      <span class="dash-row-num">${item.active ? '📢' : '🔇'}</span>
+      <span class="dash-row-title">${escapeHtml(item.title)}</span>
+      <div class="dash-row-actions">
+        <button class="dash-icon-btn" onclick="toggleAnnouncementActive('${item.id}')">${item.active ? 'Ocultar' : 'Mostrar'}</button>
+        <button class="dash-icon-btn" onclick="editAnnouncement('${item.id}')">Editar</button>
+        <button class="dash-icon-btn dash-icon-danger" onclick="deleteAnnouncement('${item.id}')">Eliminar</button>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+
+  if (announcements.length === 0) {
+    list.innerHTML = '<p class="dash-empty">Todavía no hay avisos. Agrega el primero abajo.</p>';
+  }
+}
+
+function editAnnouncement(id) {
+  const item = announcements.find(a => a.id === id);
+  if (!item) return;
+  document.getElementById('announcementId').value = item.id;
+  document.getElementById('announcementTitle').value = item.title;
+  document.getElementById('announcementMessage').value = item.message;
+  document.getElementById('announcementActive').checked = item.active;
+  document.getElementById('announcementSubmitBtn').textContent = 'Guardar cambios';
+  document.getElementById('announcementCancelBtn').hidden = false;
+}
+
+function resetAnnouncementForm() {
+  document.getElementById('announcementForm').reset();
+  document.getElementById('announcementId').value = '';
+  document.getElementById('announcementActive').checked = true;
+  document.getElementById('announcementSubmitBtn').textContent = 'Agregar aviso';
+  document.getElementById('announcementCancelBtn').hidden = true;
+}
+
+async function submitAnnouncementForm(e) {
+  e.preventDefault();
+  const id = document.getElementById('announcementId').value;
+  const title = document.getElementById('announcementTitle').value.trim();
+  const message = document.getElementById('announcementMessage').value.trim();
+  const active = document.getElementById('announcementActive').checked;
+
+  if (!title || !message) return false;
+
+  if (id) {
+    const { error } = await supabaseClient.from('announcements').update({ title, message, active }).eq('id', id);
+    if (error) { alert('Error al guardar: ' + error.message); return false; }
+  } else {
+    const nextPosition = announcements.length > 0 ? Math.max(...announcements.map(a => a.position)) + 1 : 1;
+    const { error } = await supabaseClient.from('announcements').insert({ title, message, active, position: nextPosition });
+    if (error) { alert('Error al agregar: ' + error.message); return false; }
+  }
+
+  resetAnnouncementForm();
+  await loadAnnouncements();
+  renderAdminAnnouncementsList();
+  return false;
+}
+
+async function toggleAnnouncementActive(id) {
+  const item = announcements.find(a => a.id === id);
+  if (!item) return;
+  const { error } = await supabaseClient.from('announcements').update({ active: !item.active }).eq('id', id);
+  if (error) { alert('Error al actualizar: ' + error.message); return; }
+  await loadAnnouncements();
+  renderAdminAnnouncementsList();
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm('¿Eliminar este aviso?')) return;
+  const { error } = await supabaseClient.from('announcements').delete().eq('id', id);
+  if (error) { alert('Error al eliminar: ' + error.message); return; }
+  await loadAnnouncements();
+  renderAdminAnnouncementsList();
+}
+
 // Cerrar modales al hacer clic fuera de la caja
 document.addEventListener('click', (e) => {
   if (e.target.id === 'adminModal') hideAdminLogin();
@@ -445,8 +729,10 @@ document.addEventListener('click', (e) => {
 // ============================================================
 
 window.onload = async () => {
+  attemptLiveStream();
   await loadSongs();
   await loadSchedule();
+  await loadAnnouncements();
   await checkSession();
 
   const yearEl = document.getElementById('year');

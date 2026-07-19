@@ -18,6 +18,7 @@
         <li><a href="#repertorio">Repertorio</a></li>
         <li><a href="#orquesta">Nosotros</a></li>
         <li><a href="#programacion">Programación</a></li>
+        <li><a href="#avisos">Avisos</a></li>
         <li><a href="#contacto">Contacto</a></li>
       </ul>
       <button id="navAdminBtn" class="btn-admin" onclick="showAdminLogin()">Administrador</button>
@@ -27,6 +28,7 @@
   <header id="top" class="hero">
     <div class="container">
       <span class="hero-eyebrow"><span class="pulse"></span> AL AIRE 24/7</span>
+      <span id="liveStatusBadge" class="live-status-badge">Conectando…</span>
 
       <div class="medallion-wrap">
         <svg class="medallion" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClaveX fm, radio de salsa">
@@ -81,6 +83,7 @@
         <p class="player-sub">Transmisión en vivo</p>
         <div class="player-frame">
           <div id="youtubePlayerContainer"></div>
+          <audio id="liveAudio" preload="none"></audio>
         </div>
         <div class="now-playing-row">
           <div class="equalizer"><span></span><span></span><span></span><span></span><span></span></div>
@@ -88,6 +91,7 @@
         </div>
         <div class="player-controls">
           <button class="btn-next" onclick="nextSong()">Siguiente canción ▶</button>
+          <button class="btn-retry-live" onclick="retryLiveSignal()" title="Intentar conectar con la señal en vivo del locutor">🔴 Buscar señal en vivo</button>
         </div>
       </div>
     </div>
@@ -126,6 +130,15 @@
       <h2 class="section-title">Programación <span>semanal</span></h2>
       <p class="section-lead">Franjas pensadas para acompañar cada momento del día con el mejor sabor de salsa.</p>
       <div id="scheduleGrid" class="schedule-grid"></div>
+    </div>
+  </section>
+
+  <section id="avisos" class="announcements-section">
+    <div class="container">
+      <span class="section-eyebrow">Al día</span>
+      <h2 class="section-title">Avisos <span>e información</span></h2>
+      <p class="section-lead">Presentaciones, comunicados y novedades de ClaveX fm.</p>
+      <div id="announcementsList" class="announcements-list"></div>
     </div>
   </section>
 
@@ -174,6 +187,7 @@
       <div class="dash-tabs">
         <button class="dash-tab active" data-tab="songsTab" onclick="switchTab('songsTab')">🎵 Canciones</button>
         <button class="dash-tab" data-tab="scheduleTab" onclick="switchTab('scheduleTab')">🕒 Programación</button>
+        <button class="dash-tab" data-tab="announcementsTab" onclick="switchTab('announcementsTab')">📢 Avisos</button>
       </div>
 
       <!-- TAB: Canciones -->
@@ -213,12 +227,34 @@
           </div>
         </form>
       </div>
+
+      <!-- TAB: Avisos -->
+      <div id="announcementsTab" class="dash-panel">
+        <div id="adminAnnouncementsList" class="dash-list"></div>
+
+        <form id="announcementForm" class="dash-form" onsubmit="return submitAnnouncementForm(event)">
+          <input type="hidden" id="announcementId">
+          <label>Título del aviso</label>
+          <input type="text" id="announcementTitle" placeholder="Ej: Presentación en vivo este sábado" required>
+          <label>Mensaje</label>
+          <input type="text" id="announcementMessage" placeholder="Detalles del aviso" required>
+          <label class="dash-checkbox-label">
+            <input type="checkbox" id="announcementActive" checked>
+            Mostrar en la página (activo)
+          </label>
+          <div class="dash-form-actions">
+            <button type="submit" class="btn-modal-primary" id="announcementSubmitBtn">Agregar aviso</button>
+            <button type="button" class="btn-modal-secondary" id="announcementCancelBtn" onclick="resetAnnouncementForm()" hidden>Cancelar edición</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
   <script src="https://www.youtube.com/iframe_api"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
+  <script src="stream-config.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

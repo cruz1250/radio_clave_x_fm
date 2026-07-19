@@ -1,740 +1,1085 @@
-// ============================================================
-// CLAVEX FM — lógica pública + panel de administrador
-// Requiere: supabase-config.js cargado antes que este archivo
-// ============================================================
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Bungee&family=Manrope:wght@400;500;600;700;800&display=swap');
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+:root {
+  /* Paleta ClaveX fm: rojo/negro encendido con acento azul-vinilo */
+  --night: #0D0402;          /* fondo base, negro cálido */
+  --jungle: #2B0A06;         /* fondo secundario, rojo oscuro/maroon */
+  --jungle-light: #3E120A;   /* fondo secundario claro */
+  --turquoise: #5470FF;      /* acento azul-vinilo (complementario del naranja) */
+  --mango: #FF5A1F;          /* naranja encendido (CTA principal) */
+  --gold: #FFC94D;           /* dorado, detalles */
+  --hibiscus: #E8291B;       /* rojo intenso (degradados, hover) */
+  --cream: #FFF3E9;
+  --cream-dim: rgba(255, 243, 233, 0.68);
 
-let songs = [];
-let schedule = [];
-let announcements = [];
-let currentIndex = 0;
-let mode = 'unknown'; // 'live' | 'playlist'
+  --font-display: 'Fraunces', serif;
+  --font-badge: 'Bungee', cursive;
+  --font-body: 'Manrope', sans-serif;
+}
 
-// ---------- Reproductor YouTube ----------
-let ytPlayer = null;
-let youtubeApiReady = false;
-let songsDataReady = false;
-let soundEnabled = false;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
-// La API de YouTube llama esta función global cuando está lista
-window.onYouTubeIframeAPIReady = function () {
-  youtubeApiReady = true;
-  tryInitPlayer();
-};
+html {
+  scroll-behavior: smooth;
+}
 
-function tryInitPlayer() {
-  if (mode === 'live') return; // no crear el reproductor YouTube mientras hay señal en vivo
-  if (youtubeApiReady && songsDataReady && !ytPlayer && songs.length > 0) {
-    ytPlayer = new YT.Player('youtubePlayerContainer', {
-      height: '220',
-      width: '100%',
-      videoId: songs[currentIndex].youtube_id,
-      playerVars: {
-        autoplay: 1,
-        mute: 1,          // arranca muteado: los navegadores exigen esto para autoplay
-        controls: 1,
-        modestbranding: 1,
-        rel: 0
-      },
-      events: {
-        onReady: onPlayerReady,
-        onStateChange: onPlayerStateChange
-      }
-    });
+body {
+  font-family: var(--font-body);
+  background: var(--night);
+  color: var(--cream);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+a {
+  color: inherit;
+}
+
+.container {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-let isPlaying = false;
-
-function onPlayerReady() {
-  updateNowPlayingText();
-  highlightActiveSong(currentIndex);
+/* ---------- NAV ---------- */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  background: rgba(6, 35, 31, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 201, 77, 0.18);
 }
 
-function onPlayerStateChange(event) {
-  // Cuando termina una canción, pasa automáticamente a la siguiente (radio continua)
-  if (event.data === YT.PlayerState.ENDED) {
-    nextSong();
-    return;
-  }
-  if (event.data === YT.PlayerState.PLAYING) {
-    isPlaying = true;
-    updatePlayCtaIcon();
-  }
-  if (event.data === YT.PlayerState.PAUSED) {
-    isPlaying = false;
-    updatePlayCtaIcon();
-  }
+.navbar .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-function handlePlayCta() {
-  if (mode === 'live') {
-    const audio = document.getElementById('liveAudio');
-    if (!audio) return;
-
-    if (!soundEnabled) {
-      soundEnabled = true;
-      audio.muted = false;
-      audio.play();
-      isPlaying = true;
-      updatePlayCtaIcon();
-      return;
-    }
-
-    if (isPlaying) {
-      audio.pause();
-      isPlaying = false;
-    } else {
-      audio.play();
-      isPlaying = true;
-    }
-    updatePlayCtaIcon();
-    return;
-  }
-
-  // Modo repertorio (YouTube)
-  if (!ytPlayer) return;
-
-  if (!soundEnabled) {
-    // Primer clic: activa el sonido (requiere gesto del usuario) y asegura reproducción
-    soundEnabled = true;
-    ytPlayer.unMute();
-    ytPlayer.setVolume(100);
-    ytPlayer.playVideo();
-    return;
-  }
-
-  // Clics siguientes: alterna play/pause
-  if (isPlaying) {
-    ytPlayer.pauseVideo();
-  } else {
-    ytPlayer.playVideo();
-  }
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: 0.5px;
+  color: var(--gold);
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-function updatePlayCtaIcon() {
-  const icon = document.getElementById('playCtaIcon');
-  if (icon) icon.textContent = isPlaying ? '❚❚' : '▶';
+.nav-brand .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--hibiscus);
+  box-shadow: 0 0 10px var(--hibiscus);
+  flex-shrink: 0;
 }
 
-// ============================================================
-// SEÑAL EN VIVO (Zeno.fm) con caída automática al repertorio
-// ============================================================
-
-function attemptLiveStream() {
-  const audio = document.getElementById('liveAudio');
-  const badge = document.getElementById('liveStatusBadge');
-
-  if (!audio || typeof ZENO_STREAM_URL === 'undefined' || !ZENO_STREAM_URL || ZENO_STREAM_URL.includes('TU-MOUNT-AQUI')) {
-    // No hay URL de streaming configurada todavía: usar repertorio directamente.
-    switchToPlaylistMode();
-    return;
-  }
-
-  if (badge) badge.textContent = 'Conectando…';
-
-  audio.src = ZENO_STREAM_URL;
-  audio.muted = true; // necesario para que el navegador permita el intento automático
-
-  const timeout = setTimeout(() => {
-    switchToPlaylistMode();
-  }, 6000);
-
-  audio.addEventListener('playing', function onPlaying() {
-    clearTimeout(timeout);
-    switchToLiveMode();
-    audio.removeEventListener('error', onError);
-  }, { once: true });
-
-  function onError() {
-    clearTimeout(timeout);
-    switchToPlaylistMode();
-  }
-  audio.addEventListener('error', onError, { once: true });
-
-  audio.play().catch(() => {
-    // El navegador bloqueó el intento silencioso; se espera el timeout como respaldo.
-  });
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  list-style: none;
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
-function switchToLiveMode() {
-  mode = 'live';
-  isPlaying = true;
-  updateModeUI();
+.nav-links a {
+  text-decoration: none;
+  color: var(--cream-dim);
+  transition: color 0.2s ease;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
 }
 
-function switchToPlaylistMode() {
-  mode = 'playlist';
-  updateModeUI();
-  tryInitPlayer();
+.nav-links a:hover {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
 }
 
-function updateModeUI() {
-  const badge = document.getElementById('liveStatusBadge');
-  const ytContainer = document.getElementById('youtubePlayerContainer');
-  const nowPlayingEl = document.getElementById('nowPlaying');
-
-  if (mode === 'live') {
-    if (badge) { badge.textContent = '🔴 EN VIVO'; badge.classList.add('is-live'); }
-    if (ytContainer) ytContainer.style.display = 'none';
-    if (nowPlayingEl) nowPlayingEl.textContent = 'Transmisión en vivo — ClaveX fm';
-  } else {
-    if (badge) { badge.textContent = '🎶 Repertorio'; badge.classList.remove('is-live'); }
-    if (ytContainer) ytContainer.style.display = 'block';
-    updateNowPlayingText();
-  }
-  updatePlayCtaIcon();
+.btn-admin {
+  background: transparent;
+  color: var(--gold);
+  border: 1.5px solid var(--gold);
+  padding: 9px 20px;
+  border-radius: 50px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  white-space: nowrap;
 }
 
-// Botón para que un oyente vuelva a intentar la señal en vivo
-// (útil si el locutor empezó a transmitir después de cargar la página)
-function retryLiveSignal() {
-  soundEnabled = false;
-  attemptLiveStream();
+.btn-admin:hover {
+  background: var(--gold);
+  color: var(--night);
+  transform: translateY(-1px);
 }
 
-// ============================================================
-// REPRODUCTOR PÚBLICO
-// ============================================================
-
-async function loadSongs() {
-  const { data, error } = await supabaseClient
-    .from('songs')
-    .select('*')
-    .order('position', { ascending: true });
-
-  if (error) {
-    console.error('Error cargando canciones:', error);
-    return;
-  }
-
-  songs = data || [];
-  renderPlaylist();
-  songsDataReady = true;
-  tryInitPlayer();
+/* ---------- HERO ---------- */
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 80px 0 40px;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 15%, rgba(255, 90, 31, 0.22), transparent 62%),
+    linear-gradient(180deg, var(--jungle) 0%, var(--night) 65%, #000000 100%);
+  text-align: center;
 }
 
-async function loadSchedule() {
-  const { data, error } = await supabaseClient
-    .from('schedule')
-    .select('*')
-    .order('position', { ascending: true });
-
-  if (error) {
-    console.error('Error cargando programación:', error);
-    return;
-  }
-
-  schedule = data || [];
-  renderSchedule();
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-badge);
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  color: var(--night);
+  background: var(--gold);
+  padding: 9px 20px 8px;
+  border-radius: 50px;
+  box-shadow: 0 8px 24px rgba(255, 201, 77, 0.35);
 }
 
-async function loadAnnouncements() {
-  const { data, error } = await supabaseClient
-    .from('announcements')
-    .select('*')
-    .order('position', { ascending: true });
-
-  if (error) {
-    console.error('Error cargando avisos:', error);
-    return;
-  }
-
-  announcements = data || [];
-  renderAnnouncements();
+.hero-eyebrow .pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--hibiscus);
+  animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
-function playSong(index) {
-  if (!songs[index]) return;
-  currentIndex = index;
-
-  // Si alguien elige una canción puntual del repertorio mientras hay
-  // transmisión en vivo, pausamos la señal en vivo y pasamos a modo repertorio.
-  if (mode === 'live') {
-    const liveAudioEl = document.getElementById('liveAudio');
-    if (liveAudioEl) liveAudioEl.pause();
-    mode = 'playlist';
-    updateModeUI();
-    tryInitPlayer();
-  }
-
-  const song = songs[index];
-
-  if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-    ytPlayer.loadVideoById(song.youtube_id);
-    if (soundEnabled) {
-      ytPlayer.unMute();
-      ytPlayer.setVolume(100);
-    }
-  }
-  // Si el player aún no existe, tryInitPlayer() lo creará ya
-  // apuntando a currentIndex una vez estén listas la API y las canciones.
-
-  updateNowPlayingText();
-  highlightActiveSong(index);
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 41, 27, 0.7); }
+  70% { box-shadow: 0 0 0 9px rgba(232, 41, 27, 0); }
 }
 
-function updateNowPlayingText() {
-  const song = songs[currentIndex];
-  const nowPlayingEl = document.getElementById('nowPlaying');
-  if (nowPlayingEl && song) {
-    nowPlayingEl.textContent = song.artist ? `${song.title} — ${song.artist}` : song.title;
-  }
+.live-status-badge {
+  display: inline-block;
+  margin-left: 10px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.5px;
+  color: var(--cream-dim);
+  background: rgba(255, 243, 233, 0.08);
+  border: 1px solid rgba(255, 243, 233, 0.18);
+  padding: 8px 16px;
+  border-radius: 50px;
 }
 
-function nextSong() {
-  if (songs.length === 0) return;
-  currentIndex = (currentIndex + 1) % songs.length;
-  playSong(currentIndex);
+.live-status-badge.is-live {
+  color: var(--night);
+  background: var(--hibiscus);
+  border-color: var(--hibiscus);
+  animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
-function highlightActiveSong(index) {
-  document.querySelectorAll('#playlist .song').forEach((el, i) => {
-    el.classList.toggle('active', i === index);
-  });
+.medallion-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 26px auto 4px;
+  filter: drop-shadow(0 20px 45px rgba(255, 90, 31, 0.35));
 }
 
-function renderPlaylist() {
-  const playlistEl = document.getElementById('playlist');
-  playlistEl.innerHTML = '';
-
-  songs.forEach((song, i) => {
-    const div = document.createElement('div');
-    div.className = 'song';
-    div.innerHTML = `
-      <span class="song-num">${String(i + 1).padStart(2, '0')}</span>
-      <div class="song-info">
-        <div class="song-title">${escapeHtml(song.title)}</div>
-        <div class="song-sub">${escapeHtml(song.artist || 'ClaveX fm')} · Repertorio</div>
-      </div>
-      <button class="song-play" aria-label="Reproducir ${escapeHtml(song.title)}">▶</button>
-    `;
-    div.addEventListener('click', () => playSong(i));
-    playlistEl.appendChild(div);
-  });
+.medallion {
+  width: min(260px, 60vw);
+  height: auto;
 }
 
-function renderSchedule() {
-  const grid = document.getElementById('scheduleGrid');
-  grid.innerHTML = '';
-
-  schedule.forEach((item) => {
-    const div = document.createElement('div');
-    div.className = 'schedule-card';
-    div.innerHTML = `
-      <span class="schedule-time">${escapeHtml(item.time_range)}</span>
-      <h3>${escapeHtml(item.title)}</h3>
-      <p>${escapeHtml(item.description || '')}</p>
-    `;
-    grid.appendChild(div);
-  });
+.hero-eyebrow-orange {
+  font-family: var(--font-badge);
+  font-size: clamp(1.1rem, 2.6vw, 1.5rem);
+  color: var(--mango);
+  letter-spacing: 0.5px;
+  margin-top: 22px;
+  text-shadow: 0 0 24px rgba(255, 90, 31, 0.4);
 }
 
-function renderAnnouncements() {
-  const list = document.getElementById('announcementsList');
-  if (!list) return;
-  list.innerHTML = '';
-
-  const visible = announcements.filter(a => a.active);
-
-  if (visible.length === 0) {
-    list.innerHTML = '<p class="announcements-empty">No hay avisos por el momento.</p>';
-    return;
-  }
-
-  visible.forEach((item) => {
-    const div = document.createElement('div');
-    div.className = 'announcement-card';
-    div.innerHTML = `
-      <h3>${escapeHtml(item.title)}</h3>
-      <p>${escapeHtml(item.message)}</p>
-    `;
-    list.appendChild(div);
-  });
+.tagline {
+  color: var(--cream-dim);
+  font-size: 1.05rem;
+  max-width: 480px;
+  margin: 8px auto 0;
+  font-weight: 500;
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str ?? '';
-  return div.innerHTML;
+.hero > * {
+  position: relative;
+  z-index: 1;
 }
 
-// ============================================================
-// AUTENTICACIÓN
-// ============================================================
-
-function showAdminLogin() {
-  document.getElementById('loginError').hidden = true;
-  document.getElementById('adminModal').classList.add('open');
+/* ---------- PLAYER DECK ---------- */
+.player {
+  background: linear-gradient(155deg, #220905 0%, #150402 100%);
+  border-radius: 26px;
+  padding: 34px 28px 30px;
+  margin: 46px auto 0;
+  max-width: 640px;
+  box-shadow:
+    0 30px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 201, 77, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  text-align: center;
+  position: relative;
 }
 
-function hideAdminLogin() {
-  document.getElementById('adminModal').classList.remove('open');
+.player::before,
+.player::after {
+  content: '';
+  position: absolute;
+  top: 20px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffdf8a, var(--gold) 60%, #9a6c14 100%);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
-async function adminLogin() {
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
-  const errorEl = document.getElementById('loginError');
-  errorEl.hidden = true;
+.player::before { left: 22px; }
+.player::after { right: 22px; }
 
-  if (!email || !password) return;
-
-  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    errorEl.textContent = 'Correo o contraseña incorrectos.';
-    errorEl.hidden = false;
-    return;
-  }
-
-  document.getElementById('password').value = '';
-  hideAdminLogin();
-  openAdminDashboard();
+.player h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.3rem;
+  color: var(--gold);
+  margin-bottom: 4px;
 }
 
-async function adminLogout() {
-  await supabaseClient.auth.signOut();
-  document.getElementById('adminDashboard').classList.remove('open');
+.player-sub {
+  font-size: 0.8rem;
+  color: var(--cream-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
 }
 
-async function checkSession() {
-  const { data } = await supabaseClient.auth.getSession();
-  updateAdminUI(!!data.session);
+#youtubePlayerContainer {
+  margin: 4px 0 22px;
+  min-height: 220px;
+  background: #000;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.5);
 }
 
-function updateAdminUI(isLoggedIn) {
-  const navBtn = document.getElementById('navAdminBtn');
-  if (isLoggedIn) {
-    navBtn.textContent = 'Panel Admin';
-    navBtn.onclick = openAdminDashboard;
-  } else {
-    navBtn.textContent = 'Administrador';
-    navBtn.onclick = showAdminLogin;
-  }
+#youtubePlayerContainer iframe {
+  display: block;
+  border-radius: 14px;
 }
 
-supabaseClient.auth.onAuthStateChange((_event, session) => {
-  updateAdminUI(!!session);
-});
-
-// ============================================================
-// PANEL DE ADMINISTRADOR
-// ============================================================
-
-function openAdminDashboard() {
-  renderAdminSongsList();
-  renderAdminScheduleList();
-  renderAdminAnnouncementsList();
-  document.getElementById('adminDashboard').classList.add('open');
+.player-frame {
+  position: relative;
 }
 
-function switchTab(tabId) {
-  document.querySelectorAll('.dash-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === tabId);
-  });
-  document.querySelectorAll('.dash-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.id === tabId);
-  });
+.clavex-cta-row {
+  display: flex;
+  justify-content: center;
+  margin: -6px 0 18px;
 }
 
-// ---------- Gestión de canciones ----------
-
-function renderAdminSongsList() {
-  const list = document.getElementById('adminSongsList');
-  list.innerHTML = '';
-
-  songs.forEach((song, i) => {
-    const row = document.createElement('div');
-    row.className = 'dash-row';
-    row.innerHTML = `
-      <span class="dash-row-num">${i + 1}</span>
-      <span class="dash-row-title">${escapeHtml(song.title)} <em class="dash-row-artist">— ${escapeHtml(song.artist || '')}</em></span>
-      <div class="dash-row-actions">
-        <button class="dash-icon-btn-move" onclick="moveSongUp('${song.id}')" ${i === 0 ? 'disabled' : ''} title="Subir">↑</button>
-        <button class="dash-icon-btn-move" onclick="moveSongDown('${song.id}')" ${i === songs.length - 1 ? 'disabled' : ''} title="Bajar">↓</button>
-        <button class="dash-icon-btn" onclick="editSong('${song.id}')">Editar</button>
-        <button class="dash-icon-btn dash-icon-danger" onclick="deleteSong('${song.id}')">Eliminar</button>
-      </div>
-    `;
-    list.appendChild(row);
-  });
-
-  if (songs.length === 0) {
-    list.innerHTML = '<p class="dash-empty">Todavía no hay canciones. Agrega la primera abajo.</p>';
-  }
+.play-cta {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, #FF9457, var(--mango) 55%, var(--hibiscus) 100%);
+  box-shadow: 0 16px 34px rgba(232, 41, 27, 0.5), inset 0 2px 6px rgba(255,255,255,0.25);
+  color: var(--cream);
+  font-size: 1.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: sound-pulse 1.8s ease-in-out infinite;
+  transition: transform 0.2s ease;
 }
 
-function editSong(id) {
-  const song = songs.find(s => s.id === id);
-  if (!song) return;
-  document.getElementById('songId').value = song.id;
-  document.getElementById('songTitle').value = song.title;
-  document.getElementById('songArtist').value = song.artist || '';
-  document.getElementById('songYoutubeId').value = song.youtube_id;
-  document.getElementById('songSubmitBtn').textContent = 'Guardar cambios';
-  document.getElementById('songCancelBtn').hidden = false;
+.play-cta:hover {
+  transform: scale(1.05);
 }
 
-function resetSongForm() {
-  document.getElementById('songForm').reset();
-  document.getElementById('songId').value = '';
-  document.getElementById('songSubmitBtn').textContent = 'Agregar canción';
-  document.getElementById('songCancelBtn').hidden = true;
+.play-cta #playCtaIcon {
+  margin-left: 4px; /* optical centering for the play triangle */
 }
 
-async function submitSongForm(e) {
-  e.preventDefault();
-  const id = document.getElementById('songId').value;
-  const title = document.getElementById('songTitle').value.trim();
-  const artist = document.getElementById('songArtist').value.trim();
-  const youtube_id = document.getElementById('songYoutubeId').value.trim();
-
-  if (!title || !artist || !youtube_id) return false;
-
-  if (id) {
-    const { error } = await supabaseClient.from('songs').update({ title, artist, youtube_id }).eq('id', id);
-    if (error) { alert('Error al guardar: ' + error.message); return false; }
-  } else {
-    const nextPosition = songs.length > 0 ? Math.max(...songs.map(s => s.position)) + 1 : 1;
-    const { error } = await supabaseClient.from('songs').insert({ title, artist, youtube_id, position: nextPosition });
-    if (error) { alert('Error al agregar: ' + error.message); return false; }
-  }
-
-  resetSongForm();
-  await loadSongs();
-  renderAdminSongsList();
-  return false;
+@keyframes sound-pulse {
+  0%, 100% { box-shadow: 0 16px 34px rgba(232, 41, 27, 0.5), inset 0 2px 6px rgba(255,255,255,0.25); }
+  50% { box-shadow: 0 16px 44px rgba(232, 41, 27, 0.75), inset 0 2px 6px rgba(255,255,255,0.25); }
 }
 
-async function deleteSong(id) {
-  if (!confirm('¿Eliminar esta canción del repertorio?')) return;
-  const { error } = await supabaseClient.from('songs').delete().eq('id', id);
-  if (error) { alert('Error al eliminar: ' + error.message); return; }
-  await loadSongs();
-  renderAdminSongsList();
+.now-playing-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
-async function moveSongUp(id) {
-  const index = songs.findIndex(s => s.id === id);
-  if (index <= 0) return;
-  await swapPositions('songs', songs[index], songs[index - 1]);
-  await loadSongs();
-  renderAdminSongsList();
+.equalizer {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 22px;
 }
 
-async function moveSongDown(id) {
-  const index = songs.findIndex(s => s.id === id);
-  if (index === -1 || index >= songs.length - 1) return;
-  await swapPositions('songs', songs[index], songs[index + 1]);
-  await loadSongs();
-  renderAdminSongsList();
+.equalizer span {
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--mango), var(--hibiscus));
+  animation: eq 1s ease-in-out infinite;
 }
 
-async function swapPositions(table, itemA, itemB) {
-  const posA = itemA.position;
-  const posB = itemB.position;
-  const { error: e1 } = await supabaseClient.from(table).update({ position: posB }).eq('id', itemA.id);
-  const { error: e2 } = await supabaseClient.from(table).update({ position: posA }).eq('id', itemB.id);
-  if (e1 || e2) alert('Error al reordenar: ' + (e1?.message || e2?.message));
+.equalizer span:nth-child(1) { height: 40%; animation-delay: -0.9s; }
+.equalizer span:nth-child(2) { height: 100%; animation-delay: -0.5s; }
+.equalizer span:nth-child(3) { height: 65%; animation-delay: -1.1s; }
+.equalizer span:nth-child(4) { height: 85%; animation-delay: -0.2s; }
+.equalizer span:nth-child(5) { height: 50%; animation-delay: -0.7s; }
+
+@keyframes eq {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
 }
 
-// ---------- Gestión de programación ----------
-
-function renderAdminScheduleList() {
-  const list = document.getElementById('adminScheduleList');
-  list.innerHTML = '';
-
-  schedule.forEach((item, i) => {
-    const row = document.createElement('div');
-    row.className = 'dash-row';
-    row.innerHTML = `
-      <span class="dash-row-num">${escapeHtml(item.time_range)}</span>
-      <span class="dash-row-title">${escapeHtml(item.title)}</span>
-      <div class="dash-row-actions">
-        <button class="dash-icon-btn-move" onclick="moveScheduleUp('${item.id}')" ${i === 0 ? 'disabled' : ''} title="Subir">↑</button>
-        <button class="dash-icon-btn-move" onclick="moveScheduleDown('${item.id}')" ${i === schedule.length - 1 ? 'disabled' : ''} title="Bajar">↓</button>
-        <button class="dash-icon-btn" onclick="editScheduleItem('${item.id}')">Editar</button>
-        <button class="dash-icon-btn dash-icon-danger" onclick="deleteScheduleItem('${item.id}')">Eliminar</button>
-      </div>
-    `;
-    list.appendChild(row);
-  });
-
-  if (schedule.length === 0) {
-    list.innerHTML = '<p class="dash-empty">Todavía no hay franjas de programación.</p>';
-  }
+.now-playing {
+  font-size: 1.05rem;
+  color: var(--cream);
+  font-weight: 700;
 }
 
-function editScheduleItem(id) {
-  const item = schedule.find(s => s.id === id);
-  if (!item) return;
-  document.getElementById('scheduleId').value = item.id;
-  document.getElementById('scheduleTime').value = item.time_range;
-  document.getElementById('scheduleTitle').value = item.title;
-  document.getElementById('scheduleDesc').value = item.description || '';
-  document.getElementById('scheduleSubmitBtn').textContent = 'Guardar cambios';
-  document.getElementById('scheduleCancelBtn').hidden = false;
+.now-playing .label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--turquoise);
+  margin-bottom: 2px;
 }
 
-function resetScheduleForm() {
-  document.getElementById('scheduleForm').reset();
-  document.getElementById('scheduleId').value = '';
-  document.getElementById('scheduleSubmitBtn').textContent = 'Agregar franja';
-  document.getElementById('scheduleCancelBtn').hidden = true;
+.player-controls {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+  flex-wrap: wrap;
 }
 
-async function submitScheduleForm(e) {
-  e.preventDefault();
-  const id = document.getElementById('scheduleId').value;
-  const time_range = document.getElementById('scheduleTime').value.trim();
-  const title = document.getElementById('scheduleTitle').value.trim();
-  const description = document.getElementById('scheduleDesc').value.trim();
-
-  if (!time_range || !title) return false;
-
-  if (id) {
-    const { error } = await supabaseClient.from('schedule').update({ time_range, title, description }).eq('id', id);
-    if (error) { alert('Error al guardar: ' + error.message); return false; }
-  } else {
-    const nextPosition = schedule.length > 0 ? Math.max(...schedule.map(s => s.position)) + 1 : 1;
-    const { error } = await supabaseClient.from('schedule').insert({ time_range, title, description, position: nextPosition });
-    if (error) { alert('Error al agregar: ' + error.message); return false; }
-  }
-
-  resetScheduleForm();
-  await loadSchedule();
-  renderAdminScheduleList();
-  return false;
+.btn-next {
+  background: linear-gradient(135deg, var(--mango), var(--hibiscus));
+  color: var(--cream);
+  border: none;
+  padding: 13px 30px;
+  border-radius: 50px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 10px 24px rgba(255, 78, 109, 0.3);
 }
 
-async function deleteScheduleItem(id) {
-  if (!confirm('¿Eliminar esta franja de programación?')) return;
-  const { error } = await supabaseClient.from('schedule').delete().eq('id', id);
-  if (error) { alert('Error al eliminar: ' + error.message); return; }
-  await loadSchedule();
-  renderAdminScheduleList();
+.btn-next:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 30px rgba(255, 78, 109, 0.42);
 }
 
-async function moveScheduleUp(id) {
-  const index = schedule.findIndex(s => s.id === id);
-  if (index <= 0) return;
-  await swapPositions('schedule', schedule[index], schedule[index - 1]);
-  await loadSchedule();
-  renderAdminScheduleList();
+.btn-retry-live {
+  background: transparent;
+  color: var(--cream-dim);
+  border: 1px solid rgba(255, 243, 233, 0.25);
+  padding: 12px 24px;
+  border-radius: 50px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: var(--font-body);
 }
 
-async function moveScheduleDown(id) {
-  const index = schedule.findIndex(s => s.id === id);
-  if (index === -1 || index >= schedule.length - 1) return;
-  await swapPositions('schedule', schedule[index], schedule[index + 1]);
-  await loadSchedule();
-  renderAdminScheduleList();
+.btn-retry-live:hover {
+  border-color: var(--hibiscus);
+  color: var(--hibiscus);
 }
 
-// ---------- Gestión de avisos / información ----------
-
-function renderAdminAnnouncementsList() {
-  const list = document.getElementById('adminAnnouncementsList');
-  list.innerHTML = '';
-
-  announcements.forEach((item) => {
-    const row = document.createElement('div');
-    row.className = 'dash-row' + (item.active ? '' : ' dash-row-inactive');
-    row.innerHTML = `
-      <span class="dash-row-num">${item.active ? '📢' : '🔇'}</span>
-      <span class="dash-row-title">${escapeHtml(item.title)}</span>
-      <div class="dash-row-actions">
-        <button class="dash-icon-btn" onclick="toggleAnnouncementActive('${item.id}')">${item.active ? 'Ocultar' : 'Mostrar'}</button>
-        <button class="dash-icon-btn" onclick="editAnnouncement('${item.id}')">Editar</button>
-        <button class="dash-icon-btn dash-icon-danger" onclick="deleteAnnouncement('${item.id}')">Eliminar</button>
-      </div>
-    `;
-    list.appendChild(row);
-  });
-
-  if (announcements.length === 0) {
-    list.innerHTML = '<p class="dash-empty">Todavía no hay avisos. Agrega el primero abajo.</p>';
-  }
+/* ---------- WAVE DIVIDER ---------- */
+.wave-divider {
+  display: block;
+  width: 100%;
+  line-height: 0;
 }
 
-function editAnnouncement(id) {
-  const item = announcements.find(a => a.id === id);
-  if (!item) return;
-  document.getElementById('announcementId').value = item.id;
-  document.getElementById('announcementTitle').value = item.title;
-  document.getElementById('announcementMessage').value = item.message;
-  document.getElementById('announcementActive').checked = item.active;
-  document.getElementById('announcementSubmitBtn').textContent = 'Guardar cambios';
-  document.getElementById('announcementCancelBtn').hidden = false;
+/* ---------- SECTIONS ---------- */
+section {
+  padding: 70px 0;
 }
 
-function resetAnnouncementForm() {
-  document.getElementById('announcementForm').reset();
-  document.getElementById('announcementId').value = '';
-  document.getElementById('announcementActive').checked = true;
-  document.getElementById('announcementSubmitBtn').textContent = 'Agregar aviso';
-  document.getElementById('announcementCancelBtn').hidden = true;
+.section-eyebrow {
+  font-family: var(--font-badge);
+  font-size: 0.72rem;
+  letter-spacing: 2px;
+  color: var(--mango);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 10px;
 }
 
-async function submitAnnouncementForm(e) {
-  e.preventDefault();
-  const id = document.getElementById('announcementId').value;
-  const title = document.getElementById('announcementTitle').value.trim();
-  const message = document.getElementById('announcementMessage').value.trim();
-  const active = document.getElementById('announcementActive').checked;
-
-  if (!title || !message) return false;
-
-  if (id) {
-    const { error } = await supabaseClient.from('announcements').update({ title, message, active }).eq('id', id);
-    if (error) { alert('Error al guardar: ' + error.message); return false; }
-  } else {
-    const nextPosition = announcements.length > 0 ? Math.max(...announcements.map(a => a.position)) + 1 : 1;
-    const { error } = await supabaseClient.from('announcements').insert({ title, message, active, position: nextPosition });
-    if (error) { alert('Error al agregar: ' + error.message); return false; }
-  }
-
-  resetAnnouncementForm();
-  await loadAnnouncements();
-  renderAdminAnnouncementsList();
-  return false;
+.section-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.8rem, 3.6vw, 2.6rem);
+  color: var(--cream);
+  margin-bottom: 14px;
 }
 
-async function toggleAnnouncementActive(id) {
-  const item = announcements.find(a => a.id === id);
-  if (!item) return;
-  const { error } = await supabaseClient.from('announcements').update({ active: !item.active }).eq('id', id);
-  if (error) { alert('Error al actualizar: ' + error.message); return; }
-  await loadAnnouncements();
-  renderAdminAnnouncementsList();
+.section-title span {
+  color: var(--turquoise);
 }
 
-async function deleteAnnouncement(id) {
-  if (!confirm('¿Eliminar este aviso?')) return;
-  const { error } = await supabaseClient.from('announcements').delete().eq('id', id);
-  if (error) { alert('Error al eliminar: ' + error.message); return; }
-  await loadAnnouncements();
-  renderAdminAnnouncementsList();
+.section-lead {
+  color: var(--cream-dim);
+  max-width: 640px;
+  font-size: 1.02rem;
 }
 
-// Cerrar modales al hacer clic fuera de la caja
-document.addEventListener('click', (e) => {
-  if (e.target.id === 'adminModal') hideAdminLogin();
-});
+/* ---------- ABOUT ---------- */
+.about-section {
+  background: var(--jungle);
+}
 
-// ============================================================
-// INICIO
-// ============================================================
+.about-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 48px;
+  align-items: center;
+  margin-top: 40px;
+}
 
-window.onload = async () => {
-  attemptLiveStream();
-  await loadSongs();
-  await loadSchedule();
-  await loadAnnouncements();
-  await checkSession();
+.about-copy p {
+  color: var(--cream-dim);
+  margin-bottom: 16px;
+  font-size: 1rem;
+}
 
-  const yearEl = document.getElementById('year');
-  if (yearEl) yearEl.textContent = new Date().getFullYear();
-};
+.about-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.stat {
+  background: rgba(255, 247, 234, 0.05);
+  border: 1px solid rgba(255, 201, 77, 0.18);
+  border-radius: 16px;
+  padding: 16px 12px;
+  text-align: center;
+}
+
+.stat strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  color: var(--gold);
+}
+
+.stat span {
+  font-size: 0.72rem;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.about-visual {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 0deg, #1a0603 0deg 8deg, #2b0a06 8deg 16deg);
+  box-shadow: 0 30px 60px rgba(0,0,0,0.5), inset 0 0 0 14px var(--night), inset 0 0 0 16px rgba(255,201,77,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+.about-visual::after {
+  content: '';
+  width: 32%;
+  height: 32%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, var(--mango), var(--hibiscus) 70%);
+  box-shadow: 0 0 0 6px rgba(6,35,31,0.9), 0 0 0 8px var(--gold);
+}
+
+/* ---------- PLAYLIST ---------- */
+.playlist-section {
+  background: var(--night);
+}
+
+.playlist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 16px;
+  margin-top: 40px;
+}
+
+.song {
+  background: var(--jungle);
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 201, 77, 0.14);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.song:hover {
+  background: var(--jungle-light);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 28px rgba(0,0,0,0.35);
+  border-color: rgba(255, 122, 61, 0.4);
+}
+
+.song.active {
+  background: linear-gradient(135deg, rgba(255,122,61,0.18), rgba(255,78,109,0.14));
+  border-color: var(--mango);
+}
+
+.song-num {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--turquoise);
+  width: 30px;
+  flex-shrink: 0;
+}
+
+.song-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.song-title {
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--cream);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-sub {
+  font-size: 0.75rem;
+  color: var(--cream-dim);
+  margin-top: 2px;
+}
+
+.song-play {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 201, 77, 0.12);
+  color: var(--gold);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.song-play:hover {
+  background: var(--gold);
+  color: var(--night);
+}
+
+/* ---------- SCHEDULE ---------- */
+.schedule-section {
+  background: var(--jungle);
+}
+
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-top: 40px;
+}
+
+.schedule-card {
+  background: rgba(6, 35, 31, 0.5);
+  border: 1px solid rgba(255, 201, 77, 0.14);
+  border-radius: 18px;
+  padding: 22px;
+}
+
+.schedule-time {
+  font-family: var(--font-badge);
+  font-size: 0.68rem;
+  letter-spacing: 1px;
+  color: var(--hibiscus);
+  text-transform: uppercase;
+}
+
+.schedule-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--cream);
+  margin: 8px 0 6px;
+}
+
+.schedule-card p {
+  font-size: 0.88rem;
+  color: var(--cream-dim);
+}
+
+/* ---------- AVISOS / INFORMACIÓN ---------- */
+.announcements-section {
+  background: var(--jungle);
+}
+
+.announcements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 40px;
+  max-width: 720px;
+}
+
+.announcement-card {
+  background: rgba(6, 2, 1, 0.4);
+  border: 1px solid rgba(255, 201, 77, 0.16);
+  border-left: 3px solid var(--mango);
+  border-radius: 14px;
+  padding: 18px 22px;
+  text-align: left;
+}
+
+.announcement-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.announcement-card p {
+  font-size: 0.92rem;
+  color: var(--cream-dim);
+}
+
+.announcements-empty {
+  color: var(--cream-dim);
+  font-size: 0.9rem;
+}
+
+/* ---------- CONTACT / SOCIAL ---------- */
+.contact-section {
+  background: var(--night);
+  text-align: center;
+}
+
+.social {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+
+.social a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--cream);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.92rem;
+  background: rgba(255, 247, 234, 0.06);
+  border: 1px solid rgba(255, 201, 77, 0.2);
+  padding: 11px 22px;
+  border-radius: 50px;
+  transition: all 0.25s ease;
+}
+
+.social a:hover {
+  background: var(--turquoise);
+  color: var(--night);
+  border-color: var(--turquoise);
+  transform: translateY(-2px);
+}
+
+/* ---------- FOOTER ---------- */
+footer {
+  background: #060201;
+  padding: 36px 0;
+  text-align: center;
+  border-top: 1px solid rgba(255, 201, 77, 0.14);
+}
+
+footer .foot-brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--gold);
+  font-size: 1.1rem;
+}
+
+footer p {
+  color: var(--cream-dim);
+  font-size: 0.82rem;
+  margin-top: 8px;
+}
+
+/* ---------- ADMIN MODAL ---------- */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 20, 17, 0.88);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-overlay.open {
+  display: flex;
+}
+
+.modal-box {
+  background: var(--jungle);
+  border: 1px solid rgba(255, 201, 77, 0.25);
+  padding: 32px;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+}
+
+.modal-box h3 {
+  font-family: var(--font-display);
+  color: var(--gold);
+  font-size: 1.3rem;
+  margin-bottom: 18px;
+}
+
+.modal-box input {
+  width: 100%;
+  padding: 13px 14px;
+  margin: 8px 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255,247,234,0.2);
+  background: rgba(255,247,234,0.06);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+}
+
+.modal-box input::placeholder {
+  color: var(--cream-dim);
+}
+
+.modal-box input:focus {
+  border-color: var(--turquoise);
+  outline: none;
+}
+
+.btn-modal-primary {
+  width: 100%;
+  padding: 13px;
+  background: linear-gradient(135deg, var(--mango), var(--hibiscus));
+  border: none;
+  color: var(--cream);
+  font-weight: 700;
+  border-radius: 10px;
+  margin-top: 10px;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+
+.btn-modal-secondary {
+  width: 100%;
+  padding: 11px;
+  background: transparent;
+  border: 1px solid var(--turquoise);
+  color: var(--turquoise);
+  margin-top: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+/* ---------- ADMIN DASHBOARD ---------- */
+.modal-box-wide {
+  max-width: 640px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.form-error {
+  background: rgba(255, 78, 109, 0.12);
+  border: 1px solid rgba(255, 78, 109, 0.4);
+  color: var(--hibiscus);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.dash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.dash-header h3 {
+  margin: 0;
+}
+
+.btn-logout {
+  width: auto;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+}
+
+.dash-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 201, 77, 0.18);
+}
+
+.dash-tab {
+  background: transparent;
+  border: none;
+  color: var(--cream-dim);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 10px 6px 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.dash-tab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+.dash-panel {
+  display: none;
+}
+
+.dash-panel.active {
+  display: block;
+}
+
+.dash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 22px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.dash-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 247, 234, 0.05);
+  border: 1px solid rgba(255, 201, 77, 0.14);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.dash-row-num {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--turquoise);
+  flex-shrink: 0;
+  min-width: 26px;
+}
+
+.dash-row-title {
+  flex: 1;
+  font-size: 0.88rem;
+  color: var(--cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-row-artist {
+  color: var(--cream-dim);
+  font-style: normal;
+  font-size: 0.8rem;
+}
+
+.dash-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dash-icon-btn-move {
+  background: rgba(255, 247, 234, 0.08);
+  border: 1px solid rgba(255, 247, 234, 0.15);
+  color: var(--cream-dim);
+  font-size: 0.8rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.dash-icon-btn-move:hover:not(:disabled) {
+  border-color: var(--turquoise);
+  color: var(--turquoise);
+}
+
+.dash-icon-btn-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.dash-checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0 !important;
+  font-size: 0.85rem !important;
+  color: var(--cream-dim) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+
+.dash-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--mango);
+}
+
+.dash-row-inactive {
+  opacity: 0.5;
+}
+
+.dash-icon-btn {
+  background: rgba(255, 247, 234, 0.08);
+  border: 1px solid rgba(255, 247, 234, 0.15);
+  color: var(--cream-dim);
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+.dash-icon-btn:hover {
+  border-color: var(--turquoise);
+  color: var(--turquoise);
+}
+
+.dash-icon-danger:hover {
+  border-color: var(--hibiscus);
+  color: var(--hibiscus);
+}
+
+.dash-empty {
+  color: var(--cream-dim);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 14px;
+}
+
+.dash-form {
+  border-top: 1px solid rgba(255, 201, 77, 0.14);
+  padding-top: 18px;
+}
+
+.dash-form label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gold);
+  margin: 12px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.dash-form label .hint {
+  color: var(--cream-dim);
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.dash-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.dash-form-actions .btn-modal-primary,
+.dash-form-actions .btn-modal-secondary {
+  margin-top: 0;
+  width: auto;
+  flex: 1;
+}
+
+/* ---------- RESPONSIVE ---------- */
+@media (max-width: 860px) {
+  .about-grid { grid-template-columns: 1fr; }
+  .about-visual { margin-top: 20px; }
+  .nav-links { display: none; }
+}
+
+@media (max-width: 600px) {
+  .hero { padding: 70px 0 30px; }
+  .player { padding: 28px 18px 24px; }
+  section { padding: 50px 0; }
+}

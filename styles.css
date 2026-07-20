@@ -136,6 +136,8 @@ a {
   cursor: pointer;
   transition: all 0.25s ease;
   white-space: nowrap;
+  display: inline-block;
+  text-decoration: none;
 }
 
 .btn-admin:hover {
@@ -180,6 +182,27 @@ a {
 @keyframes pulse-dot {
   0%, 100% { box-shadow: 0 0 0 0 rgba(232, 41, 27, 0.7); }
   70% { box-shadow: 0 0 0 9px rgba(232, 41, 27, 0); }
+}
+
+.live-status-badge {
+  display: inline-block;
+  margin-left: 10px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.5px;
+  color: var(--cream-dim);
+  background: rgba(255, 243, 233, 0.08);
+  border: 1px solid rgba(255, 243, 233, 0.18);
+  padding: 8px 16px;
+  border-radius: 50px;
+}
+
+.live-status-badge.is-live {
+  color: var(--night);
+  background: var(--hibiscus);
+  border-color: var(--hibiscus);
+  animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 .medallion-wrap {
@@ -389,6 +412,24 @@ a {
 .btn-next:hover {
   transform: translateY(-2px) scale(1.03);
   box-shadow: 0 14px 30px rgba(255, 78, 109, 0.42);
+}
+
+.btn-retry-live {
+  background: transparent;
+  color: var(--cream-dim);
+  border: 1px solid rgba(255, 243, 233, 0.25);
+  padding: 12px 24px;
+  border-radius: 50px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: var(--font-body);
+}
+
+.btn-retry-live:hover {
+  border-color: var(--hibiscus);
+  color: var(--hibiscus);
 }
 
 /* ---------- WAVE DIVIDER ---------- */
@@ -627,6 +668,45 @@ section {
   color: var(--cream-dim);
 }
 
+/* ---------- AVISOS / INFORMACIÓN ---------- */
+.announcements-section {
+  background: var(--jungle);
+}
+
+.announcements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 40px;
+  max-width: 720px;
+}
+
+.announcement-card {
+  background: rgba(6, 2, 1, 0.4);
+  border: 1px solid rgba(255, 201, 77, 0.16);
+  border-left: 3px solid var(--mango);
+  border-radius: 14px;
+  padding: 18px 22px;
+  text-align: left;
+}
+
+.announcement-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.announcement-card p {
+  font-size: 0.92rem;
+  color: var(--cream-dim);
+}
+
+.announcements-empty {
+  color: var(--cream-dim);
+  font-size: 0.9rem;
+}
+
 /* ---------- CONTACT / SOCIAL ---------- */
 .contact-section {
   background: var(--night);
@@ -765,6 +845,85 @@ footer p {
   font-weight: 600;
 }
 
+/* ---------- PÁGINA DE ADMINISTRADOR (independiente) ---------- */
+.admin-login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 15%, rgba(255, 90, 31, 0.18), transparent 62%),
+    linear-gradient(180deg, var(--jungle) 0%, var(--night) 65%, #000000 100%);
+}
+
+.admin-back-link {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+}
+
+.admin-dashboard-page {
+  min-height: 100vh;
+  background: var(--night);
+}
+
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 28px;
+  background: rgba(6, 35, 31, 0.92);
+  border-bottom: 1px solid rgba(255, 201, 77, 0.18);
+  flex-wrap: wrap;
+}
+
+.admin-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--gold);
+  text-decoration: none;
+}
+
+.admin-topbar-brand .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--hibiscus);
+  flex-shrink: 0;
+}
+
+.admin-topbar-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.admin-topbar-actions .btn-modal-secondary,
+.admin-topbar-actions a.btn-modal-secondary {
+  width: auto;
+  margin: 0;
+  padding: 9px 18px;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+.admin-content {
+  padding: 32px 24px 60px;
+  max-width: 780px;
+}
+
+/* En la página completa, las listas y formularios no necesitan la altura
+   limitada que tenían dentro del modal */
+.admin-content .dash-list {
+  max-height: none;
+}
+
 /* ---------- ADMIN DASHBOARD ---------- */
 .modal-box-wide {
   max-width: 640px;
@@ -879,6 +1038,54 @@ footer p {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.dash-icon-btn-move {
+  background: rgba(255, 247, 234, 0.08);
+  border: 1px solid rgba(255, 247, 234, 0.15);
+  color: var(--cream-dim);
+  font-size: 0.8rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.dash-icon-btn-move:hover:not(:disabled) {
+  border-color: var(--turquoise);
+  color: var(--turquoise);
+}
+
+.dash-icon-btn-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.dash-checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0 !important;
+  font-size: 0.85rem !important;
+  color: var(--cream-dim) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+
+.dash-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--mango);
+}
+
+.dash-row-inactive {
+  opacity: 0.5;
 }
 
 .dash-icon-btn {

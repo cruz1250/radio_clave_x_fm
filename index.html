@@ -21,7 +21,7 @@
         <li><a href="#avisos">Avisos</a></li>
         <li><a href="#contacto">Contacto</a></li>
       </ul>
-      <button id="navAdminBtn" class="btn-admin" onclick="showAdminLogin()">Administrador</button>
+      <a href="admin.html" class="btn-admin">Administrador</a>
     </div>
   </nav>
 
@@ -163,93 +163,6 @@
       <p>&copy; <span id="year"></span> ClaveX fm. Todos los derechos reservados.</p>
     </div>
   </footer>
-
-  <!-- Modal: Login Administrador -->
-  <div id="adminModal" class="modal-overlay">
-    <div class="modal-box">
-      <h3>Acceso Administrador</h3>
-      <p id="loginError" class="form-error" hidden></p>
-      <input type="email" id="email" placeholder="Correo" autocomplete="username">
-      <input type="password" id="password" placeholder="Contraseña" autocomplete="current-password">
-      <button class="btn-modal-primary" onclick="adminLogin()">Entrar</button>
-      <button class="btn-modal-secondary" onclick="hideAdminLogin()">Cancelar</button>
-    </div>
-  </div>
-
-  <!-- Modal: Panel de Administrador -->
-  <div id="adminDashboard" class="modal-overlay">
-    <div class="modal-box modal-box-wide">
-      <div class="dash-header">
-        <h3>Panel de Administrador</h3>
-        <button class="btn-modal-secondary btn-logout" onclick="adminLogout()">Cerrar sesión</button>
-      </div>
-
-      <div class="dash-tabs">
-        <button class="dash-tab active" data-tab="songsTab" onclick="switchTab('songsTab')">🎵 Canciones</button>
-        <button class="dash-tab" data-tab="scheduleTab" onclick="switchTab('scheduleTab')">🕒 Programación</button>
-        <button class="dash-tab" data-tab="announcementsTab" onclick="switchTab('announcementsTab')">📢 Avisos</button>
-      </div>
-
-      <!-- TAB: Canciones -->
-      <div id="songsTab" class="dash-panel active">
-        <div id="adminSongsList" class="dash-list"></div>
-
-        <form id="songForm" class="dash-form" onsubmit="return submitSongForm(event)">
-          <input type="hidden" id="songId">
-          <label>Título de la canción</label>
-          <input type="text" id="songTitle" placeholder="Ej: El Negro Carabalí" required>
-          <label>Artista / Orquesta</label>
-          <input type="text" id="songArtist" placeholder="Ej: Son de Ébano" required>
-          <label>ID de YouTube <span class="hint">(la parte final de la URL, después de watch?v=)</span></label>
-          <input type="text" id="songYoutubeId" placeholder="Ej: RcakcxYY1p4" required>
-          <div class="dash-form-actions">
-            <button type="submit" class="btn-modal-primary" id="songSubmitBtn">Agregar canción</button>
-            <button type="button" class="btn-modal-secondary" id="songCancelBtn" onclick="resetSongForm()" hidden>Cancelar edición</button>
-          </div>
-        </form>
-      </div>
-
-      <!-- TAB: Programación -->
-      <div id="scheduleTab" class="dash-panel">
-        <div id="adminScheduleList" class="dash-list"></div>
-
-        <form id="scheduleForm" class="dash-form" onsubmit="return submitScheduleForm(event)">
-          <input type="hidden" id="scheduleId">
-          <label>Horario</label>
-          <input type="text" id="scheduleTime" placeholder="Ej: 6:00 AM – 9:00 AM" required>
-          <label>Nombre del programa</label>
-          <input type="text" id="scheduleTitle" placeholder="Ej: Amanecer con Son" required>
-          <label>Descripción</label>
-          <input type="text" id="scheduleDesc" placeholder="Breve descripción del programa">
-          <div class="dash-form-actions">
-            <button type="submit" class="btn-modal-primary" id="scheduleSubmitBtn">Agregar franja</button>
-            <button type="button" class="btn-modal-secondary" id="scheduleCancelBtn" onclick="resetScheduleForm()" hidden>Cancelar edición</button>
-          </div>
-        </form>
-      </div>
-
-      <!-- TAB: Avisos -->
-      <div id="announcementsTab" class="dash-panel">
-        <div id="adminAnnouncementsList" class="dash-list"></div>
-
-        <form id="announcementForm" class="dash-form" onsubmit="return submitAnnouncementForm(event)">
-          <input type="hidden" id="announcementId">
-          <label>Título del aviso</label>
-          <input type="text" id="announcementTitle" placeholder="Ej: Presentación en vivo este sábado" required>
-          <label>Mensaje</label>
-          <input type="text" id="announcementMessage" placeholder="Detalles del aviso" required>
-          <label class="dash-checkbox-label">
-            <input type="checkbox" id="announcementActive" checked>
-            Mostrar en la página (activo)
-          </label>
-          <div class="dash-form-actions">
-            <button type="submit" class="btn-modal-primary" id="announcementSubmitBtn">Agregar aviso</button>
-            <button type="button" class="btn-modal-secondary" id="announcementCancelBtn" onclick="resetAnnouncementForm()" hidden>Cancelar edición</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
 
   <script src="https://www.youtube.com/iframe_api"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

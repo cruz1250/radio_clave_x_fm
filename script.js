@@ -1,1085 +1,402 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Bungee&family=Manrope:wght@400;500;600;700;800&display=swap');
+// ============================================================
+// CLAVEX FM — lógica pública del sitio (reproductor, repertorio,
+// programación, avisos y señal en vivo)
+// El panel de administrador vive aparte, en admin.html / admin.js
+// Requiere: supabase-config.js y stream-config.js cargados antes
+// ============================================================
 
-:root {
-  /* Paleta ClaveX fm: rojo/negro encendido con acento azul-vinilo */
-  --night: #0D0402;          /* fondo base, negro cálido */
-  --jungle: #2B0A06;         /* fondo secundario, rojo oscuro/maroon */
-  --jungle-light: #3E120A;   /* fondo secundario claro */
-  --turquoise: #5470FF;      /* acento azul-vinilo (complementario del naranja) */
-  --mango: #FF5A1F;          /* naranja encendido (CTA principal) */
-  --gold: #FFC94D;           /* dorado, detalles */
-  --hibiscus: #E8291B;       /* rojo intenso (degradados, hover) */
-  --cream: #FFF3E9;
-  --cream-dim: rgba(255, 243, 233, 0.68);
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  --font-display: 'Fraunces', serif;
-  --font-badge: 'Bungee', cursive;
-  --font-body: 'Manrope', sans-serif;
-}
+let songs = [];
+let schedule = [];
+let announcements = [];
+let currentIndex = 0;
+let mode = 'unknown'; // 'live' | 'playlist'
+let currentStreamUrl = null;
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+// ---------- Reproductor YouTube ----------
+let ytPlayer = null;
+let youtubeApiReady = false;
+let songsDataReady = false;
+let soundEnabled = false;
 
-html {
-  scroll-behavior: smooth;
-}
+// La API de YouTube llama esta función global cuando está lista
+window.onYouTubeIframeAPIReady = function () {
+  youtubeApiReady = true;
+  tryInitPlayer();
+};
 
-body {
-  font-family: var(--font-body);
-  background: var(--night);
-  color: var(--cream);
-  min-height: 100vh;
-  line-height: 1.6;
-}
-
-a {
-  color: inherit;
-}
-
-.container {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 0 24px;
-}
-
-/* Accessibility */
-:focus-visible {
-  outline: 3px solid var(--gold);
-  outline-offset: 3px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
+function tryInitPlayer() {
+  if (mode === 'live') return; // no crear el reproductor YouTube mientras hay señal en vivo
+  if (youtubeApiReady && songsDataReady && !ytPlayer && songs.length > 0) {
+    ytPlayer = new YT.Player('youtubePlayerContainer', {
+      height: '220',
+      width: '100%',
+      videoId: songs[currentIndex].youtube_id,
+      playerVars: {
+        autoplay: 1,
+        mute: 1,          // arranca muteado: los navegadores exigen esto para autoplay
+        controls: 1,
+        modestbranding: 1,
+        rel: 0
+      },
+      events: {
+        onReady: onPlayerReady,
+        onStateChange: onPlayerStateChange
+      }
+    });
   }
 }
 
-/* ---------- NAV ---------- */
-.navbar {
-  position: sticky;
-  top: 0;
-  z-index: 200;
-  background: rgba(6, 35, 31, 0.92);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 201, 77, 0.18);
-}
-
-.navbar .container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 14px;
-  padding-bottom: 14px;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.3rem;
-  letter-spacing: 0.5px;
-  color: var(--gold);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.nav-brand .dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--hibiscus);
-  box-shadow: 0 0 10px var(--hibiscus);
-  flex-shrink: 0;
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 26px;
-  list-style: none;
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.nav-links a {
-  text-decoration: none;
-  color: var(--cream-dim);
-  transition: color 0.2s ease;
-  padding: 6px 0;
-  border-bottom: 2px solid transparent;
-}
-
-.nav-links a:hover {
-  color: var(--gold);
-  border-bottom-color: var(--gold);
-}
-
-.btn-admin {
-  background: transparent;
-  color: var(--gold);
-  border: 1.5px solid var(--gold);
-  padding: 9px 20px;
-  border-radius: 50px;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  white-space: nowrap;
-}
-
-.btn-admin:hover {
-  background: var(--gold);
-  color: var(--night);
-  transform: translateY(-1px);
-}
-
-/* ---------- HERO ---------- */
-.hero {
-  position: relative;
-  overflow: hidden;
-  padding: 80px 0 40px;
-  background:
-    radial-gradient(ellipse 80% 55% at 50% 15%, rgba(255, 90, 31, 0.22), transparent 62%),
-    linear-gradient(180deg, var(--jungle) 0%, var(--night) 65%, #000000 100%);
-  text-align: center;
-}
-
-.hero-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  font-family: var(--font-badge);
-  font-size: 0.85rem;
-  letter-spacing: 1px;
-  color: var(--night);
-  background: var(--gold);
-  padding: 9px 20px 8px;
-  border-radius: 50px;
-  box-shadow: 0 8px 24px rgba(255, 201, 77, 0.35);
-}
-
-.hero-eyebrow .pulse {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--hibiscus);
-  animation: pulse-dot 1.6s ease-in-out infinite;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 41, 27, 0.7); }
-  70% { box-shadow: 0 0 0 9px rgba(232, 41, 27, 0); }
-}
-
-.live-status-badge {
-  display: inline-block;
-  margin-left: 10px;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 0.78rem;
-  letter-spacing: 0.5px;
-  color: var(--cream-dim);
-  background: rgba(255, 243, 233, 0.08);
-  border: 1px solid rgba(255, 243, 233, 0.18);
-  padding: 8px 16px;
-  border-radius: 50px;
-}
-
-.live-status-badge.is-live {
-  color: var(--night);
-  background: var(--hibiscus);
-  border-color: var(--hibiscus);
-  animation: pulse-dot 1.6s ease-in-out infinite;
-}
-
-.medallion-wrap {
-  display: flex;
-  justify-content: center;
-  margin: 26px auto 4px;
-  filter: drop-shadow(0 20px 45px rgba(255, 90, 31, 0.35));
-}
-
-.medallion {
-  width: min(260px, 60vw);
-  height: auto;
-}
-
-.hero-eyebrow-orange {
-  font-family: var(--font-badge);
-  font-size: clamp(1.1rem, 2.6vw, 1.5rem);
-  color: var(--mango);
-  letter-spacing: 0.5px;
-  margin-top: 22px;
-  text-shadow: 0 0 24px rgba(255, 90, 31, 0.4);
-}
-
-.tagline {
-  color: var(--cream-dim);
-  font-size: 1.05rem;
-  max-width: 480px;
-  margin: 8px auto 0;
-  font-weight: 500;
-}
-
-.hero > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* ---------- PLAYER DECK ---------- */
-.player {
-  background: linear-gradient(155deg, #220905 0%, #150402 100%);
-  border-radius: 26px;
-  padding: 34px 28px 30px;
-  margin: 46px auto 0;
-  max-width: 640px;
-  box-shadow:
-    0 30px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 201, 77, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  text-align: center;
-  position: relative;
-}
-
-.player::before,
-.player::after {
-  content: '';
-  position: absolute;
-  top: 20px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffdf8a, var(--gold) 60%, #9a6c14 100%);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-}
-
-.player::before { left: 22px; }
-.player::after { right: 22px; }
-
-.player h2 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.3rem;
-  color: var(--gold);
-  margin-bottom: 4px;
-}
-
-.player-sub {
-  font-size: 0.8rem;
-  color: var(--cream-dim);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-bottom: 20px;
-}
-
-#youtubePlayerContainer {
-  margin: 4px 0 22px;
-  min-height: 220px;
-  background: #000;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 12px 28px rgba(0,0,0,0.5);
-}
-
-#youtubePlayerContainer iframe {
-  display: block;
-  border-radius: 14px;
-}
-
-.player-frame {
-  position: relative;
-}
-
-.clavex-cta-row {
-  display: flex;
-  justify-content: center;
-  margin: -6px 0 18px;
-}
-
-.play-cta {
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  background: radial-gradient(circle at 35% 30%, #FF9457, var(--mango) 55%, var(--hibiscus) 100%);
-  box-shadow: 0 16px 34px rgba(232, 41, 27, 0.5), inset 0 2px 6px rgba(255,255,255,0.25);
-  color: var(--cream);
-  font-size: 1.8rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: sound-pulse 1.8s ease-in-out infinite;
-  transition: transform 0.2s ease;
-}
-
-.play-cta:hover {
-  transform: scale(1.05);
-}
-
-.play-cta #playCtaIcon {
-  margin-left: 4px; /* optical centering for the play triangle */
-}
-
-@keyframes sound-pulse {
-  0%, 100% { box-shadow: 0 16px 34px rgba(232, 41, 27, 0.5), inset 0 2px 6px rgba(255,255,255,0.25); }
-  50% { box-shadow: 0 16px 44px rgba(232, 41, 27, 0.75), inset 0 2px 6px rgba(255,255,255,0.25); }
-}
-
-.now-playing-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.equalizer {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 22px;
-}
-
-.equalizer span {
-  width: 4px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--mango), var(--hibiscus));
-  animation: eq 1s ease-in-out infinite;
-}
-
-.equalizer span:nth-child(1) { height: 40%; animation-delay: -0.9s; }
-.equalizer span:nth-child(2) { height: 100%; animation-delay: -0.5s; }
-.equalizer span:nth-child(3) { height: 65%; animation-delay: -1.1s; }
-.equalizer span:nth-child(4) { height: 85%; animation-delay: -0.2s; }
-.equalizer span:nth-child(5) { height: 50%; animation-delay: -0.7s; }
-
-@keyframes eq {
-  0%, 100% { transform: scaleY(0.3); }
-  50% { transform: scaleY(1); }
-}
-
-.now-playing {
-  font-size: 1.05rem;
-  color: var(--cream);
-  font-weight: 700;
-}
-
-.now-playing .label {
-  display: block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--turquoise);
-  margin-bottom: 2px;
-}
-
-.player-controls {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 24px;
-  flex-wrap: wrap;
-}
-
-.btn-next {
-  background: linear-gradient(135deg, var(--mango), var(--hibiscus));
-  color: var(--cream);
-  border: none;
-  padding: 13px 30px;
-  border-radius: 50px;
-  font-size: 0.95rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-  box-shadow: 0 10px 24px rgba(255, 78, 109, 0.3);
-}
-
-.btn-next:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 14px 30px rgba(255, 78, 109, 0.42);
-}
-
-.btn-retry-live {
-  background: transparent;
-  color: var(--cream-dim);
-  border: 1px solid rgba(255, 243, 233, 0.25);
-  padding: 12px 24px;
-  border-radius: 50px;
-  font-size: 0.88rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  font-family: var(--font-body);
-}
-
-.btn-retry-live:hover {
-  border-color: var(--hibiscus);
-  color: var(--hibiscus);
-}
-
-/* ---------- WAVE DIVIDER ---------- */
-.wave-divider {
-  display: block;
-  width: 100%;
-  line-height: 0;
-}
-
-/* ---------- SECTIONS ---------- */
-section {
-  padding: 70px 0;
-}
-
-.section-eyebrow {
-  font-family: var(--font-badge);
-  font-size: 0.72rem;
-  letter-spacing: 2px;
-  color: var(--mango);
-  text-transform: uppercase;
-  display: block;
-  margin-bottom: 10px;
-}
-
-.section-title {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(1.8rem, 3.6vw, 2.6rem);
-  color: var(--cream);
-  margin-bottom: 14px;
-}
-
-.section-title span {
-  color: var(--turquoise);
-}
-
-.section-lead {
-  color: var(--cream-dim);
-  max-width: 640px;
-  font-size: 1.02rem;
-}
-
-/* ---------- ABOUT ---------- */
-.about-section {
-  background: var(--jungle);
-}
-
-.about-grid {
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 48px;
-  align-items: center;
-  margin-top: 40px;
-}
-
-.about-copy p {
-  color: var(--cream-dim);
-  margin-bottom: 16px;
-  font-size: 1rem;
-}
-
-.about-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  margin-top: 26px;
-}
-
-.stat {
-  background: rgba(255, 247, 234, 0.05);
-  border: 1px solid rgba(255, 201, 77, 0.18);
-  border-radius: 16px;
-  padding: 16px 12px;
-  text-align: center;
-}
-
-.stat strong {
-  display: block;
-  font-family: var(--font-display);
-  font-size: 1.6rem;
-  color: var(--gold);
-}
-
-.stat span {
-  font-size: 0.72rem;
-  color: var(--cream-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-}
-
-.about-visual {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  border-radius: 50%;
-  background:
-    repeating-conic-gradient(from 0deg, #1a0603 0deg 8deg, #2b0a06 8deg 16deg);
-  box-shadow: 0 30px 60px rgba(0,0,0,0.5), inset 0 0 0 14px var(--night), inset 0 0 0 16px rgba(255,201,77,0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  max-width: 340px;
-  margin: 0 auto;
-}
-
-.about-visual::after {
-  content: '';
-  width: 32%;
-  height: 32%;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, var(--mango), var(--hibiscus) 70%);
-  box-shadow: 0 0 0 6px rgba(6,35,31,0.9), 0 0 0 8px var(--gold);
-}
-
-/* ---------- PLAYLIST ---------- */
-.playlist-section {
-  background: var(--night);
-}
-
-.playlist {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
-  gap: 16px;
-  margin-top: 40px;
-}
-
-.song {
-  background: var(--jungle);
-  padding: 18px 20px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 201, 77, 0.14);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  transition: all 0.25s ease;
-  cursor: pointer;
-}
-
-.song:hover {
-  background: var(--jungle-light);
-  transform: translateY(-4px);
-  box-shadow: 0 16px 28px rgba(0,0,0,0.35);
-  border-color: rgba(255, 122, 61, 0.4);
-}
-
-.song.active {
-  background: linear-gradient(135deg, rgba(255,122,61,0.18), rgba(255,78,109,0.14));
-  border-color: var(--mango);
-}
-
-.song-num {
-  font-family: var(--font-display);
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--turquoise);
-  width: 30px;
-  flex-shrink: 0;
-}
-
-.song-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.song-title {
-  font-weight: 700;
-  font-size: 0.98rem;
-  color: var(--cream);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.song-sub {
-  font-size: 0.75rem;
-  color: var(--cream-dim);
-  margin-top: 2px;
-}
-
-.song-play {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255, 201, 77, 0.12);
-  color: var(--gold);
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.song-play:hover {
-  background: var(--gold);
-  color: var(--night);
-}
-
-/* ---------- SCHEDULE ---------- */
-.schedule-section {
-  background: var(--jungle);
-}
-
-.schedule-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
-  margin-top: 40px;
-}
-
-.schedule-card {
-  background: rgba(6, 35, 31, 0.5);
-  border: 1px solid rgba(255, 201, 77, 0.14);
-  border-radius: 18px;
-  padding: 22px;
-}
-
-.schedule-time {
-  font-family: var(--font-badge);
-  font-size: 0.68rem;
-  letter-spacing: 1px;
-  color: var(--hibiscus);
-  text-transform: uppercase;
-}
-
-.schedule-card h3 {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  color: var(--cream);
-  margin: 8px 0 6px;
-}
-
-.schedule-card p {
-  font-size: 0.88rem;
-  color: var(--cream-dim);
-}
-
-/* ---------- AVISOS / INFORMACIÓN ---------- */
-.announcements-section {
-  background: var(--jungle);
-}
-
-.announcements-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 40px;
-  max-width: 720px;
-}
-
-.announcement-card {
-  background: rgba(6, 2, 1, 0.4);
-  border: 1px solid rgba(255, 201, 77, 0.16);
-  border-left: 3px solid var(--mango);
-  border-radius: 14px;
-  padding: 18px 22px;
-  text-align: left;
-}
-
-.announcement-card h3 {
-  font-family: var(--font-display);
-  font-size: 1.1rem;
-  color: var(--gold);
-  margin-bottom: 6px;
-}
-
-.announcement-card p {
-  font-size: 0.92rem;
-  color: var(--cream-dim);
-}
-
-.announcements-empty {
-  color: var(--cream-dim);
-  font-size: 0.9rem;
-}
-
-/* ---------- CONTACT / SOCIAL ---------- */
-.contact-section {
-  background: var(--night);
-  text-align: center;
-}
-
-.social {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 30px;
-}
-
-.social a {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--cream);
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 0.92rem;
-  background: rgba(255, 247, 234, 0.06);
-  border: 1px solid rgba(255, 201, 77, 0.2);
-  padding: 11px 22px;
-  border-radius: 50px;
-  transition: all 0.25s ease;
-}
-
-.social a:hover {
-  background: var(--turquoise);
-  color: var(--night);
-  border-color: var(--turquoise);
-  transform: translateY(-2px);
-}
-
-/* ---------- FOOTER ---------- */
-footer {
-  background: #060201;
-  padding: 36px 0;
-  text-align: center;
-  border-top: 1px solid rgba(255, 201, 77, 0.14);
-}
-
-footer .foot-brand {
-  font-family: var(--font-display);
-  font-weight: 700;
-  color: var(--gold);
-  font-size: 1.1rem;
-}
-
-footer p {
-  color: var(--cream-dim);
-  font-size: 0.82rem;
-  margin-top: 8px;
-}
-
-/* ---------- ADMIN MODAL ---------- */
-.modal-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 20, 17, 0.88);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.modal-overlay.open {
-  display: flex;
-}
-
-.modal-box {
-  background: var(--jungle);
-  border: 1px solid rgba(255, 201, 77, 0.25);
-  padding: 32px;
-  border-radius: 20px;
-  width: 100%;
-  max-width: 380px;
-  box-shadow: 0 30px 60px rgba(0,0,0,0.5);
-}
-
-.modal-box h3 {
-  font-family: var(--font-display);
-  color: var(--gold);
-  font-size: 1.3rem;
-  margin-bottom: 18px;
-}
-
-.modal-box input {
-  width: 100%;
-  padding: 13px 14px;
-  margin: 8px 0;
-  border-radius: 10px;
-  border: 1px solid rgba(255,247,234,0.2);
-  background: rgba(255,247,234,0.06);
-  color: var(--cream);
-  font-family: var(--font-body);
-  font-size: 0.92rem;
-}
-
-.modal-box input::placeholder {
-  color: var(--cream-dim);
-}
-
-.modal-box input:focus {
-  border-color: var(--turquoise);
-  outline: none;
-}
-
-.btn-modal-primary {
-  width: 100%;
-  padding: 13px;
-  background: linear-gradient(135deg, var(--mango), var(--hibiscus));
-  border: none;
-  color: var(--cream);
-  font-weight: 700;
-  border-radius: 10px;
-  margin-top: 10px;
-  cursor: pointer;
-  font-family: var(--font-body);
-}
-
-.btn-modal-secondary {
-  width: 100%;
-  padding: 11px;
-  background: transparent;
-  border: 1px solid var(--turquoise);
-  color: var(--turquoise);
-  margin-top: 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-family: var(--font-body);
-  font-weight: 600;
-}
-
-/* ---------- ADMIN DASHBOARD ---------- */
-.modal-box-wide {
-  max-width: 640px;
-  max-height: 88vh;
-  overflow-y: auto;
-}
-
-.form-error {
-  background: rgba(255, 78, 109, 0.12);
-  border: 1px solid rgba(255, 78, 109, 0.4);
-  color: var(--hibiscus);
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  margin-bottom: 12px;
-}
-
-.dash-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.dash-header h3 {
-  margin: 0;
-}
-
-.btn-logout {
-  width: auto;
-  margin: 0;
-  padding: 8px 16px;
-  font-size: 0.8rem;
-}
-
-.dash-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid rgba(255, 201, 77, 0.18);
-}
-
-.dash-tab {
-  background: transparent;
-  border: none;
-  color: var(--cream-dim);
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 0.88rem;
-  padding: 10px 6px 12px;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-}
-
-.dash-tab.active {
-  color: var(--gold);
-  border-bottom-color: var(--gold);
-}
-
-.dash-panel {
-  display: none;
-}
-
-.dash-panel.active {
-  display: block;
-}
-
-.dash-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 22px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.dash-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: rgba(255, 247, 234, 0.05);
-  border: 1px solid rgba(255, 201, 77, 0.14);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-.dash-row-num {
-  font-family: var(--font-display);
-  font-size: 0.85rem;
-  color: var(--turquoise);
-  flex-shrink: 0;
-  min-width: 26px;
-}
-
-.dash-row-title {
-  flex: 1;
-  font-size: 0.88rem;
-  color: var(--cream);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dash-row-artist {
-  color: var(--cream-dim);
-  font-style: normal;
-  font-size: 0.8rem;
-}
-
-.dash-row-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.dash-icon-btn-move {
-  background: rgba(255, 247, 234, 0.08);
-  border: 1px solid rgba(255, 247, 234, 0.15);
-  color: var(--cream-dim);
-  font-size: 0.8rem;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-.dash-icon-btn-move:hover:not(:disabled) {
-  border-color: var(--turquoise);
-  color: var(--turquoise);
-}
-
-.dash-icon-btn-move:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
-.dash-checkbox-label {
-  display: flex !important;
-  align-items: center;
-  gap: 8px;
-  margin: 14px 0 0 !important;
-  font-size: 0.85rem !important;
-  color: var(--cream-dim) !important;
-  text-transform: none !important;
-  letter-spacing: 0 !important;
-  font-weight: 500 !important;
-  cursor: pointer;
-}
-
-.dash-checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--mango);
-}
-
-.dash-row-inactive {
-  opacity: 0.5;
-}
-
-.dash-icon-btn {
-  background: rgba(255, 247, 234, 0.08);
-  border: 1px solid rgba(255, 247, 234, 0.15);
-  color: var(--cream-dim);
-  font-size: 0.75rem;
-  padding: 6px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-family: var(--font-body);
-  font-weight: 600;
-}
-
-.dash-icon-btn:hover {
-  border-color: var(--turquoise);
-  color: var(--turquoise);
-}
-
-.dash-icon-danger:hover {
-  border-color: var(--hibiscus);
-  color: var(--hibiscus);
-}
-
-.dash-empty {
-  color: var(--cream-dim);
-  font-size: 0.85rem;
-  text-align: center;
-  padding: 14px;
-}
-
-.dash-form {
-  border-top: 1px solid rgba(255, 201, 77, 0.14);
-  padding-top: 18px;
-}
-
-.dash-form label {
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--gold);
-  margin: 12px 0 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-.dash-form label .hint {
-  color: var(--cream-dim);
-  text-transform: none;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-
-.dash-form-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.dash-form-actions .btn-modal-primary,
-.dash-form-actions .btn-modal-secondary {
-  margin-top: 0;
-  width: auto;
-  flex: 1;
-}
+let isPlaying = false;
+
+function onPlayerReady() {
+  updateNowPlayingText();
+  highlightActiveSong(currentIndex);
+}
+
+function onPlayerStateChange(event) {
+  // Cuando termina una canción, pasa automáticamente a la siguiente (radio continua)
+  if (event.data === YT.PlayerState.ENDED) {
+    nextSong();
+    return;
+  }
+  if (event.data === YT.PlayerState.PLAYING) {
+    isPlaying = true;
+    updatePlayCtaIcon();
+  }
+  if (event.data === YT.PlayerState.PAUSED) {
+    isPlaying = false;
+    updatePlayCtaIcon();
+  }
+}
+
+function handlePlayCta() {
+  if (mode === 'live') {
+    const audio = document.getElementById('liveAudio');
+    if (!audio) return;
+
+    if (!soundEnabled) {
+      soundEnabled = true;
+      audio.muted = false;
+      audio.play();
+      isPlaying = true;
+      updatePlayCtaIcon();
+      return;
+    }
+
+    if (isPlaying) {
+      audio.pause();
+      isPlaying = false;
+    } else {
+      audio.play();
+      isPlaying = true;
+    }
+    updatePlayCtaIcon();
+    return;
+  }
+
+  // Modo repertorio (YouTube)
+  if (!ytPlayer) return;
+
+  if (!soundEnabled) {
+    // Primer clic: activa el sonido (requiere gesto del usuario) y asegura reproducción
+    soundEnabled = true;
+    ytPlayer.unMute();
+    ytPlayer.setVolume(100);
+    ytPlayer.playVideo();
+    return;
+  }
+
+  // Clics siguientes: alterna play/pause
+  if (isPlaying) {
+    ytPlayer.pauseVideo();
+  } else {
+    ytPlayer.playVideo();
+  }
+}
+
+function updatePlayCtaIcon() {
+  const icon = document.getElementById('playCtaIcon');
+  if (icon) icon.textContent = isPlaying ? '❚❚' : '▶';
+}
+
+// ============================================================
+// SEÑAL EN VIVO (Zeno.fm) con caída automática al repertorio
+// ============================================================
+
+async function loadStreamSettings() {
+  try {
+    const { data, error } = await supabaseClient
+      .from('settings')
+      .select('stream_url')
+      .eq('id', 1)
+      .single();
+
+    if (!error && data && data.stream_url) {
+      currentStreamUrl = data.stream_url;
+      return;
+    }
+  } catch (e) {
+    // La tabla "settings" todavía no existe (falta correr la migración) — seguimos con el respaldo de abajo.
+  }
+
+  // Respaldo: compatibilidad con configuraciones anteriores vía stream-config.js
+  if (typeof ZENO_STREAM_URL !== 'undefined' && ZENO_STREAM_URL && !ZENO_STREAM_URL.includes('TU-MOUNT-AQUI')) {
+    currentStreamUrl = ZENO_STREAM_URL;
+  }
+}
+
+function attemptLiveStream() {
+  const audio = document.getElementById('liveAudio');
+  const badge = document.getElementById('liveStatusBadge');
+
+  if (!audio || !currentStreamUrl) {
+    // No hay URL de streaming configurada todavía: usar repertorio directamente.
+    switchToPlaylistMode();
+    return;
+  }
 
-/* ---------- RESPONSIVE ---------- */
-@media (max-width: 860px) {
-  .about-grid { grid-template-columns: 1fr; }
-  .about-visual { margin-top: 20px; }
-  .nav-links { display: none; }
-}
+  if (badge) badge.textContent = 'Conectando…';
+
+  audio.src = currentStreamUrl;
+  audio.muted = true; // necesario para que el navegador permita el intento automático
+
+  const timeout = setTimeout(() => {
+    switchToPlaylistMode();
+  }, 6000);
+
+  audio.addEventListener('playing', function onPlaying() {
+    clearTimeout(timeout);
+    switchToLiveMode();
+    audio.removeEventListener('error', onError);
+  }, { once: true });
 
-@media (max-width: 600px) {
-  .hero { padding: 70px 0 30px; }
-  .player { padding: 28px 18px 24px; }
-  section { padding: 50px 0; }
-}
+  function onError() {
+    clearTimeout(timeout);
+    switchToPlaylistMode();
+  }
+  audio.addEventListener('error', onError, { once: true });
+
+  audio.play().catch(() => {
+    // El navegador bloqueó el intento silencioso; se espera el timeout como respaldo.
+  });
+}
+
+function switchToLiveMode() {
+  mode = 'live';
+  isPlaying = true;
+  updateModeUI();
+}
+
+function switchToPlaylistMode() {
+  mode = 'playlist';
+  updateModeUI();
+  tryInitPlayer();
+}
+
+function updateModeUI() {
+  const badge = document.getElementById('liveStatusBadge');
+  const ytContainer = document.getElementById('youtubePlayerContainer');
+  const nowPlayingEl = document.getElementById('nowPlaying');
+
+  if (mode === 'live') {
+    if (badge) { badge.textContent = '🔴 EN VIVO'; badge.classList.add('is-live'); }
+    if (ytContainer) ytContainer.style.display = 'none';
+    if (nowPlayingEl) nowPlayingEl.textContent = 'Transmisión en vivo — ClaveX fm';
+  } else {
+    if (badge) { badge.textContent = '🎶 Repertorio'; badge.classList.remove('is-live'); }
+    if (ytContainer) ytContainer.style.display = 'block';
+    updateNowPlayingText();
+  }
+  updatePlayCtaIcon();
+}
+
+// Botón para que un oyente vuelva a intentar la señal en vivo
+// (útil si el locutor empezó a transmitir después de cargar la página)
+async function retryLiveSignal() {
+  soundEnabled = false;
+  await loadStreamSettings();
+  attemptLiveStream();
+}
+
+// ============================================================
+// REPRODUCTOR PÚBLICO
+// ============================================================
+
+async function loadSongs() {
+  const { data, error } = await supabaseClient
+    .from('songs')
+    .select('*')
+    .order('position', { ascending: true });
+
+  if (error) {
+    console.error('Error cargando canciones:', error);
+    return;
+  }
+
+  songs = data || [];
+  renderPlaylist();
+  songsDataReady = true;
+  tryInitPlayer();
+}
+
+async function loadSchedule() {
+  const { data, error } = await supabaseClient
+    .from('schedule')
+    .select('*')
+    .order('position', { ascending: true });
+
+  if (error) {
+    console.error('Error cargando programación:', error);
+    return;
+  }
+
+  schedule = data || [];
+  renderSchedule();
+}
+
+async function loadAnnouncements() {
+  const { data, error } = await supabaseClient
+    .from('announcements')
+    .select('*')
+    .order('position', { ascending: true });
+
+  if (error) {
+    console.error('Error cargando avisos:', error);
+    return;
+  }
+
+  announcements = data || [];
+  renderAnnouncements();
+}
+
+function playSong(index) {
+  if (!songs[index]) return;
+  currentIndex = index;
+
+  // Si alguien elige una canción puntual del repertorio mientras hay
+  // transmisión en vivo, pausamos la señal en vivo y pasamos a modo repertorio.
+  if (mode === 'live') {
+    const liveAudioEl = document.getElementById('liveAudio');
+    if (liveAudioEl) liveAudioEl.pause();
+    mode = 'playlist';
+    updateModeUI();
+    tryInitPlayer();
+  }
+
+  const song = songs[index];
+
+  if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+    ytPlayer.loadVideoById(song.youtube_id);
+    if (soundEnabled) {
+      ytPlayer.unMute();
+      ytPlayer.setVolume(100);
+    }
+  }
+  // Si el player aún no existe, tryInitPlayer() lo creará ya
+  // apuntando a currentIndex una vez estén listas la API y las canciones.
+
+  updateNowPlayingText();
+  highlightActiveSong(index);
+}
+
+function updateNowPlayingText() {
+  const song = songs[currentIndex];
+  const nowPlayingEl = document.getElementById('nowPlaying');
+  if (nowPlayingEl && song) {
+    nowPlayingEl.textContent = song.artist ? `${song.title} — ${song.artist}` : song.title;
+  }
+}
+
+function nextSong() {
+  if (songs.length === 0) return;
+  currentIndex = (currentIndex + 1) % songs.length;
+  playSong(currentIndex);
+}
+
+function highlightActiveSong(index) {
+  document.querySelectorAll('#playlist .song').forEach((el, i) => {
+    el.classList.toggle('active', i === index);
+  });
+}
+
+function renderPlaylist() {
+  const playlistEl = document.getElementById('playlist');
+  playlistEl.innerHTML = '';
+
+  songs.forEach((song, i) => {
+    const div = document.createElement('div');
+    div.className = 'song';
+    div.innerHTML = `
+      <span class="song-num">${String(i + 1).padStart(2, '0')}</span>
+      <div class="song-info">
+        <div class="song-title">${escapeHtml(song.title)}</div>
+        <div class="song-sub">${escapeHtml(song.artist || 'ClaveX fm')} · Repertorio</div>
+      </div>
+      <button class="song-play" aria-label="Reproducir ${escapeHtml(song.title)}">▶</button>
+    `;
+    div.addEventListener('click', () => playSong(i));
+    playlistEl.appendChild(div);
+  });
+}
+
+function renderSchedule() {
+  const grid = document.getElementById('scheduleGrid');
+  grid.innerHTML = '';
+
+  schedule.forEach((item) => {
+    const div = document.createElement('div');
+    div.className = 'schedule-card';
+    div.innerHTML = `
+      <span class="schedule-time">${escapeHtml(item.time_range)}</span>
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>${escapeHtml(item.description || '')}</p>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+function renderAnnouncements() {
+  const list = document.getElementById('announcementsList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const visible = announcements.filter(a => a.active);
+
+  if (visible.length === 0) {
+    list.innerHTML = '<p class="announcements-empty">No hay avisos por el momento.</p>';
+    return;
+  }
+
+  visible.forEach((item) => {
+    const div = document.createElement('div');
+    div.className = 'announcement-card';
+    div.innerHTML = `
+      <h3>${escapeHtml(item.title)}</h3>
+      <p>${escapeHtml(item.message)}</p>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// ============================================================
+// INICIO
+// ============================================================
+
+window.onload = async () => {
+  await loadStreamSettings();
+  attemptLiveStream();
+  await loadSongs();
+  await loadSchedule();
+  await loadAnnouncements();
+
+  const yearEl = document.getElementById('year');
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
+};

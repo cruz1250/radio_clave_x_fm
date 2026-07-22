@@ -49,6 +49,41 @@ async function loadAnnouncements() {
 function showLoginScreen() {
   document.getElementById('adminLoginScreen').hidden = false;
   document.getElementById('adminDashboardPage').hidden = true;
+  showLoginForm();
+}
+
+function showLoginForm() {
+  document.getElementById('loginBox').hidden = false;
+  document.getElementById('forgotPasswordBox').hidden = true;
+}
+
+function showForgotPasswordForm() {
+  document.getElementById('loginBox').hidden = true;
+  document.getElementById('forgotPasswordBox').hidden = false;
+  document.getElementById('forgotError').hidden = true;
+  document.getElementById('forgotSuccess').hidden = true;
+}
+
+async function sendPasswordReset() {
+  const email = document.getElementById('forgotEmail').value.trim();
+  const errorEl = document.getElementById('forgotError');
+  const successEl = document.getElementById('forgotSuccess');
+  errorEl.hidden = true;
+  successEl.hidden = true;
+
+  if (!email) return;
+
+  const redirectTo = window.location.origin + window.location.pathname.replace('admin.html', 'reset-password.html');
+
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
+
+  if (error) {
+    errorEl.textContent = 'No pudimos enviar el correo: ' + error.message;
+    errorEl.hidden = false;
+    return;
+  }
+
+  successEl.hidden = false;
 }
 
 function showDashboardScreen() {

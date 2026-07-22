@@ -11,14 +11,25 @@
 
   <!-- Pantalla de login -->
   <div id="adminLoginScreen" class="admin-login-screen">
-    <div class="modal-box">
+    <div id="loginBox" class="modal-box">
       <h3>Acceso Administrador</h3>
       <p class="section-lead" style="margin-bottom:16px;">Panel de ClaveX fm</p>
       <p id="loginError" class="form-error" hidden></p>
       <input type="email" id="email" placeholder="Correo" autocomplete="username">
       <input type="password" id="password" placeholder="Contraseña" autocomplete="current-password">
       <button class="btn-modal-primary" onclick="adminLogin()">Entrar</button>
+      <button class="link-button" onclick="showForgotPasswordForm()">¿Olvidaste tu contraseña?</button>
       <a href="index.html" class="btn-modal-secondary admin-back-link">← Volver al sitio</a>
+    </div>
+
+    <div id="forgotPasswordBox" class="modal-box" hidden>
+      <h3>Recuperar contraseña</h3>
+      <p class="section-lead" style="margin-bottom:16px;">Te enviaremos un enlace a tu correo para crear una contraseña nueva.</p>
+      <p id="forgotError" class="form-error" hidden></p>
+      <p id="forgotSuccess" class="dash-empty" hidden>✅ Revisa tu correo — te enviamos un enlace para restablecer tu contraseña. Si no lo ves, revisa la carpeta de spam.</p>
+      <input type="email" id="forgotEmail" placeholder="Tu correo de administrador" autocomplete="username">
+      <button class="btn-modal-primary" onclick="sendPasswordReset()">Enviar enlace</button>
+      <button class="btn-modal-secondary" onclick="showLoginForm()">← Volver a iniciar sesión</button>
     </div>
   </div>
 

@@ -119,6 +119,9 @@ function handlePlayCta() {
 function updatePlayCtaIcon() {
   const icon = document.getElementById('playCtaIcon');
   if (icon) icon.textContent = isPlaying ? '❚❚' : '▶';
+
+  const medallion = document.querySelector('.medallion');
+  if (medallion) medallion.classList.toggle('is-playing', isPlaying);
 }
 
 // ============================================================

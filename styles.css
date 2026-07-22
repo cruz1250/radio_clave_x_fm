@@ -875,6 +875,12 @@ footer p {
     linear-gradient(180deg, var(--jungle) 0%, var(--night) 65%, #000000 100%);
 }
 
+.admin-login-screen[hidden],
+.admin-dashboard-page[hidden],
+.modal-box[hidden] {
+  display: none !important;
+}
+
 .admin-back-link {
   display: block;
   text-align: center;

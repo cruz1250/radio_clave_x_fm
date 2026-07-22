@@ -845,6 +845,24 @@ footer p {
   font-weight: 600;
 }
 
+.link-button {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--cream-dim);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  text-align: center;
+  margin-top: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-button:hover {
+  color: var(--gold);
+}
+
 /* ---------- PÁGINA DE ADMINISTRADOR (independiente) ---------- */
 .admin-login-screen {
   min-height: 100vh;
